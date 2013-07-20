@@ -1,0 +1,2 @@
+defmodule ElixirDebugger do
+end
