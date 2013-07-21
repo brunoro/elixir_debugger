@@ -1,50 +1,58 @@
 defmodule Evaluator do
 
-  defmacro binding do
-    __CALLER__.vars
-  end
-
   defmacro defdebug(header, do: body) do
+    { _, _, quoted_params } = header
+    vars = Enum.map quoted_params, fn({ var, meta, module }) ->
+      { var, ({ var, meta, module }) }
+    end
+
     quote do
       def unquote(header) do
-        pid = spawn_link fn ->
-          Evaluator.start(self, Evaluator.binding, __ENV__)
+        evaluator_pid = spawn_link fn ->
+          Evaluator.start(self, unquote(vars), __ENV__)
         end
  
-        return_value = Evaluator.next(pid, unquote(Macro.escape(body)))
+        return_value = Evaluator.next(evaluator_pid, unquote(Macro.escape(body)))
 
-        pid <- :done
+        evaluator_pid <- { :done, return_value }
         return_value
       end
     end
   end
  
   def start(pid, binding, scope) do
-    #scope = :elixir_scope.vars_from_binding(:elixir_scope.to_erl_env(scope), binding)
-    loop(pid, binding, scope)
+    # TODO: evaluator_pid can get collide with other names
+    scope = :elixir_scope.vars_from_binding(:elixir_scope.to_erl_env(scope), binding)
+    pid_binding = Keyword.put_new(binding, :evaluator_pid, pid)
+    loop(pid_binding, scope)
   end
   
+  # sons need to be evaluated before parents
   def next(pid, expr) do
-    pid <- { :next, expr }
+    pid <- { :next, expr, self }
     receive do
       { :ok, value } ->
+        IO.inspect value
         value
     end
   end
  
-  defp loop(pid, binding, scope) do
-    receive do
-      { :next, expr } ->
-        expanded = expand_expr(expr, scope)
-        IO.puts Macro.to_string expanded
-        { value, status, new_binding } = :elixir.eval_quoted(expanded, binding)
+  def emit_evaluator_pid do
+    {:evaluator_pid, [], nil}
+  end
 
-        IO.inspect Macro.to_string expr
-        IO.inspect new_binding
-        loop(pid, binding, scope)
+  defp loop(binding, scope) do
+    receive do
+      { :next, expr, sender } ->
+        { value, new_binding, new_scope } = Evaluator.eval(expr, binding, scope)
+
+        IO.inspect value
+
+        sender <- { :ok, value }
+        loop(new_binding, new_scope)
  
       { :done, value } ->
-        IO.inspect value
+        IO.inspect { :done, value }
     end
   end
 
@@ -70,8 +78,9 @@ defmodule Evaluator do
     [condition | [dobody]] = expr # why [dobody] instead of dobody ?
     body = Keyword.get(dobody, :do)
  
-    esc_condition = Macro.escape condition
-    exp_condition = quote do: Evaluator.next(evaluator_pid, unquote esc_condition)
+    ev_pid = emit_evaluator_pid
+    esc_condition = expand_expr(condition, scope)
+    exp_condition = quote do: Evaluator.next(unquote(ev_pid), unquote esc_condition)
 
     exp_body = expand_expr(body, scope)
  
@@ -80,28 +89,28 @@ defmodule Evaluator do
   
   # pattern matching operator
   defp expand_expr({ :-> , meta, clauses }, scope) do
-    # what are x, y in { expr, x ,y } ?
+    ev_pid = emit_evaluator_pid
     exp_clauses = Enum.map(clauses, fn ({ left, clause_meta, right }) ->
-      esc_right = Macro.escape right
-      exp_right = quote do: Evaluator.next(evaluator_pid, unquote esc_right)
+      esc_right = expand_expr(right, scope)
+      exp_right = quote do: Evaluator.next(unquote(ev_pid), unquote esc_right)
       { left, clause_meta, exp_right }
     end)
  
     { :->, meta, exp_clauses }
   end
  
-  # blocks
+  # expression list
   defp expand_expr({ type, meta, expr_list }, scope) when is_list(expr_list) do
     exp_expr_list = Enum.map expr_list, expand_expr(&1, scope)
  
+    ev_pid = emit_evaluator_pid
     esc = Macro.escape { type, meta, exp_expr_list }
-    quote do: Evaluator.next(evaluator_pid, unquote esc)
+    quote do: Evaluator.next(unquote(ev_pid), unquote esc)
   end
-  
+
   # leaf expressions
   defp expand_expr(expr, scope) do
-    esc_expr = Macro.escape expr
-    quote do: Evaluator.next(evaluator_pid, unquote esc_expr)
+    expr
   end
 end
 
@@ -109,13 +118,25 @@ defmodule Foo do
   import Evaluator 
 
   Evaluator.defdebug bar(value) do
-    other = value + 1
-    if value do
-      other
-    else
-      :none
+    value + 1
+    #other = value + 1
+    #if value do
+    #  other
+    #else
+    #  :none
+    #end
+  end
+
+  def baz(value) do 
+    evaluator_pid = spawn_link fn ->
+      Evaluator.start(self, [value: value], __ENV__)
     end
+ 
+    return_value = Evaluator.next(evaluator_pid, quote do: value)
+
+    evaluator_pid <- :done
+    return_value
   end
 end
 
-Foo.bar 1
+Foo.bar 42
