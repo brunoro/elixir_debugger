@@ -95,7 +95,15 @@ defmodule Evaluator do
   # the first clause matching the condition is found
   def match_next(pid, condition_value, { :-> , meta, clauses }) do
     matching_clause = Enum.find clauses, fn({ left, _, _ }) ->
-      condition_value == Evaluator.next(pid, left)
+      case left do
+        # TODO: should we match [false, nil] ?
+        [{:in, _, [{:_, [], Kernel}, [false, nil]]}] -> 
+          true
+        ^condition_value -> 
+          true
+        _ -> 
+          false
+      end
     end
 
     { left, clause_meta, right } = matching_clause
@@ -120,7 +128,7 @@ defmodule Foo do
     if value do
       other
     else
-      other + 1
+      100 + other
     end
   end
 end
