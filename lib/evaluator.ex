@@ -29,11 +29,23 @@ defmodule Evaluator do
   def loop(pid, binding, scope) do
     receive do
       { :eval, expr } ->
-        IO.inspect { :eval, expr }
+        #IO.inspect { :eval, expr }
+        IO.puts "\n>> #{Macro.to_string expr}"
         { value, new_binding, new_scope } = Evaluator.eval(expr, binding, scope)
 
         pid <- { :ok, value }
         loop(pid, new_binding, new_scope)
+
+      { :expand, expr } ->
+        #IO.inspect { :expand, expr }
+        IO.puts "\n>> #{Macro.to_string expr}"
+
+        { _, meta, _ } = expr
+        ex_scope = :elixir_scope.to_ex_env({ meta[:line], scope })
+        expanded = Macro.expand_once(expr, ex_scope)
+
+        pid <- { :ok, expanded }
+        loop(pid, binding, scope)
  
       { :done, value } ->
         IO.inspect { :done, value }
@@ -48,27 +60,54 @@ defmodule Evaluator do
   # Makes nested Evaluator.next calls until leafs are reached.
   # Evaluates leaf expressions by sending them to pid, which
   # keeps the current scope and binding
-  # TODO: expand if and add case clauses
 
+  # values shouldn't be evaluated
+  def next(_, value) when is_number(value), do: value
+  def next(_, value) when is_binary(value), do: value
+  def next(_, value) when is_atom(value),   do: value
+
+  # ifs (TODO: many others) should be macro expanded
+  def next(pid, { :if, meta, expr }) do 
+    expanded = Evaluator.request(pid, :expand, { :if, meta, expr })
+    Evaluator.next(pid, expanded)
+  end
+  # TODO: same format for case, receive, try
+  def next(pid, { :case, _, expr }) do
+    [condition | [clauses]] = expr 
+ 
+    condition_value = Evaluator.next(pid, condition)
+    Evaluator.match_next(pid, condition, clauses[:do]) # is there more than do?
+  end
   # On assignments only the left side is evaluated separately
   def next(pid, { :=, meta, [left | [right]] }) do
-    right_value = Evaluator.dispatch_eval(pid, right)
-    Evaluator.dispatch_eval(pid, { :=, meta, [left | [right_value]] })
+    right_value = Evaluator.request(pid, :eval, right)
+    Evaluator.request(pid, :eval, { :=, meta, [left | [right_value]] })
   end
   def next(pid, { type, meta, expr_list }) when is_list(expr_list) do
     value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
-    Evaluator.dispatch_eval(pid, { type, meta, value_list })
+    Evaluator.request(pid, :eval, { type, meta, value_list })
   end
   def next(pid, expr) do
-    Evaluator.dispatch_eval(pid, expr)
+    Evaluator.request(pid, :eval, expr)
   end
 
-  def dispatch_eval(pid, expr) do
-    pid <- { :eval, expr }
+  # pattern matching operator should evaluate clauses until
+  # the first clause matching the condition is found
+  def match_next(pid, condition_value, { :-> , meta, clauses }) do
+    matching_clause = Enum.find clauses, fn({ left, _, _ }) ->
+      condition_value == Evaluator.next(pid, left)
+    end
+
+    { left, clause_meta, right } = matching_clause
+    Evaluator.next(pid, right)
+  end
+
+  def request(pid, req, expr) do
+    pid <- { req, expr }
     receive do
-      { :ok, value } ->
-        IO.inspect { :ok, value }
-        value
+      { :ok, result } ->
+        IO.inspect { :ok, result }
+        result
     end
   end
 end
