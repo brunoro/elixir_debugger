@@ -29,17 +29,12 @@ defmodule Evaluator do
   def loop(pid, binding, scope) do
     receive do
       { :eval, expr } ->
-        #IO.inspect { :eval, expr }
-        IO.puts "\n>> #{Macro.to_string expr}"
         { value, new_binding, new_scope } = Evaluator.eval(expr, binding, scope)
 
         pid <- { :ok, value }
         loop(pid, new_binding, new_scope)
 
       { :expand, expr } ->
-        #IO.inspect { :expand, expr }
-        IO.puts "\n>> #{Macro.to_string expr}"
-
         { _, meta, _ } = expr
         ex_scope = :elixir_scope.to_ex_env({ meta[:line], scope })
         expanded = Macro.expand_once(expr, ex_scope)
@@ -48,32 +43,42 @@ defmodule Evaluator do
         loop(pid, binding, scope)
 
       { :match, { value, clauses }} ->
-        matching = Enum.find clauses, fn({ [left], meta, right }) ->
-          exp_left = Evaluator.expand_var(left, {:_, [], Kernel}, value)
-          { value, _, _ } = Evaluator.eval(exp_left, binding, scope)
-          value
-        end
-
+        { matching, new_binding, new_scope } = 
+          Evaluator.find_matching_clause(value, clauses, binding, scope)
         pid <- { :ok, matching }
-        loop(pid, binding, scope)
+
+        # TODO: is this right? scope should be specific to match operation
+        loop(pid, new_binding, new_scope)
  
       { :done, value } ->
-        IO.inspect { :done, value }
+        value
     end
   end
 
-  def apply_or_map(var, fun) do
-    if is_list(var), do: Enum.map(var, fun), else: fun.(var)
+  # TODO: should we raise an exception here?
+  def find_matching_clause(_, [], binding, scope) do
+    { nil, binding, scope }
   end
+  def find_matching_clause(value, [clause | rest], binding, scope) do 
+    # does it match?
+    { [left], _, _ } = clause
+    clause_test = quote do
+      case unquote(value) do
+        unquote(left) ->
+          true
+        _ ->
+          false
+      end
+    end
+    { bool, new_binding, new_scope } = Evaluator.eval(clause_test, binding, scope)
 
-  def expand_var(var, var, value), do: value
-  def expand_var({ left, meta, right }, var, value) do
-    exp_left = apply_or_map(left, expand_var(&1, var, value))
-    exp_right = apply_or_map(right, expand_var(&1, var, value))
-    
-    { exp_left, meta, exp_right }
+    # if it does we can send it back
+    if bool do
+      { clause, new_binding, new_scope }
+    else
+      Evaluator.find_matching_clause(value, rest, binding, scope)
+    end
   end
-  def expand_var(expr, var, value), do: expr
 
   # TODO: use scope on eval?
   def eval(expr, binding, _) do
@@ -94,33 +99,35 @@ defmodule Evaluator do
     expanded = Evaluator.request(pid, :expand, { :if, meta, expr })
     Evaluator.next(pid, expanded)
   end
+
   # TODO: same format for case, receive, try
-  def next(pid, { :case, meta, expr }) do
+  def next(pid, { :case, _, expr }) do
     [condition | [clauses]] = expr 
  
     condition_value = Evaluator.next(pid, condition)
-    IO.puts  Macro.to_string { :case, meta, expr }
     Evaluator.match_next(pid, condition_value, clauses[:do]) # is there more than do?
   end
+
   # On assignments only the left side is evaluated separately
   def next(pid, { :=, meta, [left | [right]] }) do
     right_value = Evaluator.request(pid, :eval, right)
     Evaluator.request(pid, :eval, { :=, meta, [left | [right_value]] })
   end
+
   def next(pid, { type, meta, expr_list }) when is_list(expr_list) do
     value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
     Evaluator.request(pid, :eval, { type, meta, value_list })
   end
+
   def next(pid, expr) do
     Evaluator.request(pid, :eval, expr)
   end
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
-  def match_next(pid, value, { :-> , meta, clauses }) do
-    matching_clause = 
-      Evaluator.request(pid, :match, { value, clauses })
-    { left, clause_meta, right } = matching_clause
+  def match_next(pid, value, { :-> , _, clauses }) do
+    matching_clause = Evaluator.request(pid, :match, { value, clauses })
+    { _, _, right } = matching_clause
     Evaluator.next(pid, right)
   end
 
@@ -128,23 +135,7 @@ defmodule Evaluator do
     pid <- { req, expr }
     receive do
       { :ok, result } ->
-        IO.inspect { :ok, result }
         result
     end
   end
 end
-
-defmodule Foo do
-  import Evaluator 
-
-  Evaluator.defdebug bar(value) do
-    other = value + 1
-    if value do
-      other
-    else
-      100 + other
-    end
-  end
-end
-
-Foo.bar 42

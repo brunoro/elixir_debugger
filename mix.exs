@@ -1,10 +1,10 @@
-defmodule ElixirDebuggger.Mixfile do
+defmodule ElixirDebugger.Mixfile do
   use Mix.Project
 
   def project do
-    [ app: :elixir_debuggger,
+    [ app: :elixir_debugger,
       version: "0.0.1",
-      elixir: "~> 0.9.4-dev",
+      elixir: "> 0.9.4-dev",
       deps: deps ]
   end
 
