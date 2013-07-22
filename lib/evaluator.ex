@@ -46,13 +46,36 @@ defmodule Evaluator do
 
         pid <- { :ok, expanded }
         loop(pid, binding, scope)
+
+      { :match, { value, clauses }} ->
+        matching = Enum.find clauses, fn({ [left], meta, right }) ->
+          exp_left = Evaluator.expand_var(left, {:_, [], Kernel}, value)
+          { value, _, _ } = Evaluator.eval(exp_left, binding, scope)
+          value
+        end
+
+        pid <- { :ok, matching }
+        loop(pid, binding, scope)
  
       { :done, value } ->
         IO.inspect { :done, value }
     end
   end
 
-  # TODO: use scope on eval
+  def apply_or_map(var, fun) do
+    if is_list(var), do: Enum.map(var, fun), else: fun.(var)
+  end
+
+  def expand_var(var, var, value), do: value
+  def expand_var({ left, meta, right }, var, value) do
+    exp_left = apply_or_map(left, expand_var(&1, var, value))
+    exp_right = apply_or_map(right, expand_var(&1, var, value))
+    
+    { exp_left, meta, exp_right }
+  end
+  def expand_var(expr, var, value), do: expr
+
+  # TODO: use scope on eval?
   def eval(expr, binding, _) do
     :elixir.eval_quoted([expr], binding)
   end
@@ -72,11 +95,12 @@ defmodule Evaluator do
     Evaluator.next(pid, expanded)
   end
   # TODO: same format for case, receive, try
-  def next(pid, { :case, _, expr }) do
+  def next(pid, { :case, meta, expr }) do
     [condition | [clauses]] = expr 
  
     condition_value = Evaluator.next(pid, condition)
-    Evaluator.match_next(pid, condition, clauses[:do]) # is there more than do?
+    IO.puts  Macro.to_string { :case, meta, expr }
+    Evaluator.match_next(pid, condition_value, clauses[:do]) # is there more than do?
   end
   # On assignments only the left side is evaluated separately
   def next(pid, { :=, meta, [left | [right]] }) do
@@ -93,19 +117,9 @@ defmodule Evaluator do
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
-  def match_next(pid, condition_value, { :-> , meta, clauses }) do
-    matching_clause = Enum.find clauses, fn({ left, _, _ }) ->
-      case left do
-        # TODO: should we match [false, nil] ?
-        [{:in, _, [{:_, [], Kernel}, [false, nil]]}] -> 
-          true
-        ^condition_value -> 
-          true
-        _ -> 
-          false
-      end
-    end
-
+  def match_next(pid, value, { :-> , meta, clauses }) do
+    matching_clause = 
+      Evaluator.request(pid, :match, { value, clauses })
     { left, clause_meta, right } = matching_clause
     Evaluator.next(pid, right)
   end
