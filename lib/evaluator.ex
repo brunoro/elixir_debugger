@@ -25,22 +25,19 @@ defmodule Evaluator do
     { :ok, { binding, scope }}
   end
   
-  # expand & eval
   def handle_call({ :eval, expr }, _from, { binding, scope }) do
-    { _, meta, _ } = expr
-    ex_scope = :elixir_scope.to_ex_env({ meta[:line], scope })
-    expanded = Macro.expand_once(expr, ex_scope)
-
-    # only macros that lead to case-like expressions should be expanded
-    { value, new_binding, new_scope } = case expanded do
-      { :case, _, _ } ->
-        Evaluator.eval_quoted(expanded, binding, scope)
-      _ ->
-        Evaluator.eval_quoted(expr, binding, scope)
-    end
-
+    { value, new_binding, new_scope } = Evaluator.eval_quoted(expr, binding, scope)
     { :reply, value, { new_binding, new_scope }}
   end
+ 
+  def handle_call({ :expand, expr }, _from, { binding, scope }) do
+    { _, meta, _ } = expr
+    # TODO: WOT M8, meta[:line] is nil??
+    ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, scope })
+    expanded = Macro.expand_once(expr, ex_scope)
+ 
+    { :reply, expanded, { binding, scope }}
+    end
 
   def handle_call({ :match, { value, clauses }}, _from, { binding, scope }) do
     { matching, new_binding, new_scope } = 
@@ -87,11 +84,23 @@ defmodule Evaluator do
   # client functions
   def done(pid), do: :gen_server.cast(pid, :done)
   def eval(pid, expr), do: :gen_server.call(pid, { :eval, expr })
+  def expand(pid, expr), do: :gen_server.call(pid, { :expand, expr })
   def match(pid, value, clauses), do: :gen_server.call(pid, { :match, { value, clauses }})
 
   # Makes nested Evaluator.next calls until leafs are reached.
   # Evaluates leaf expressions by sending them to pid, which
   # keeps the current scope and binding
+
+  # expansions that lead to case-like expressions should be kept
+  defp do_or_expand(pid, expr, fun) do 
+    expanded = Evaluator.expand(pid, expr)
+    case expanded do
+      { :case, _, _ } ->
+        Evaluator.next(pid, expanded)
+      _ ->
+        fun.()
+    end
+  end
 
   # values shouldn't be evaluated
   def next(_, value) when is_number(value), do: value
@@ -99,8 +108,9 @@ defmodule Evaluator do
   def next(_, value) when is_atom(value),   do: value
 
   # TODO: same format for case, receive, try
-  def next(pid, { :case, _, expr }) do
-    [condition | [clauses]] = expr 
+  #       can case be redefined?
+  def next(pid, { :case, _, body }) do
+    [condition | [clauses]] = body
  
     condition_value = Evaluator.next(pid, condition)
     Evaluator.match_next(pid, condition_value, clauses[:do]) # is there more than do?
@@ -108,17 +118,23 @@ defmodule Evaluator do
 
   # On assignments only the right side is evaluated separately
   def next(pid, { :=, meta, [left | [right]] }) do
-    right_value = Evaluator.eval(pid, right)
+    right_value = Evaluator.next(pid, right)
     Evaluator.eval(pid, { :=, meta, [left | [right_value]] })
   end
 
   def next(pid, { type, meta, expr_list }) when is_list(expr_list) do
-    value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
-    Evaluator.eval(pid, { type, meta, value_list })
+    expr = { type, meta, expr_list }
+
+    do_or_expand pid, expr, fn ->
+      value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
+      Evaluator.eval(pid, { type, meta, value_list })
+    end
   end
 
   def next(pid, expr) do
-    Evaluator.eval(pid, expr)
+    do_or_expand pid, expr, fn ->
+      Evaluator.eval(pid, expr)
+    end
   end
 
   # pattern matching operator should evaluate clauses until
