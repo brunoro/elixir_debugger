@@ -25,17 +25,21 @@ defmodule Evaluator do
     { :ok, { binding, scope }}
   end
   
+  # expand & eval
   def handle_call({ :eval, expr }, _from, { binding, scope }) do
-    { value, new_binding, new_scope } = Evaluator.eval_quoted(expr, binding, scope)
-    { :reply, value, { new_binding, new_scope }}
-  end
-
-  def handle_call({ :expand, expr }, _from, { binding, scope }) do
     { _, meta, _ } = expr
     ex_scope = :elixir_scope.to_ex_env({ meta[:line], scope })
     expanded = Macro.expand_once(expr, ex_scope)
 
-    { :reply, expanded, { binding, scope }}
+    # only macros that lead to case-like expressions should be expanded
+    { value, new_binding, new_scope } = case expanded do
+      { :case, _, _ } ->
+        Evaluator.eval_quoted(expanded, binding, scope)
+      _ ->
+        Evaluator.eval_quoted(expr, binding, scope)
+    end
+
+    { :reply, value, { new_binding, new_scope }}
   end
 
   def handle_call({ :match, { value, clauses }}, _from, { binding, scope }) do
@@ -83,7 +87,6 @@ defmodule Evaluator do
   # client functions
   def done(pid), do: :gen_server.cast(pid, :done)
   def eval(pid, expr), do: :gen_server.call(pid, { :eval, expr })
-  def expand(pid, expr), do: :gen_server.call(pid, { :expand, expr })
   def match(pid, value, clauses), do: :gen_server.call(pid, { :match, { value, clauses }})
 
   # Makes nested Evaluator.next calls until leafs are reached.
@@ -94,12 +97,6 @@ defmodule Evaluator do
   def next(_, value) when is_number(value), do: value
   def next(_, value) when is_binary(value), do: value
   def next(_, value) when is_atom(value),   do: value
-
-  # ifs (TODO: many others) should be macro expanded
-  def next(pid, { :if, meta, expr }) do 
-    expanded = Evaluator.expand(pid, { :if, meta, expr })
-    Evaluator.next(pid, expanded)
-  end
 
   # TODO: same format for case, receive, try
   def next(pid, { :case, _, expr }) do
