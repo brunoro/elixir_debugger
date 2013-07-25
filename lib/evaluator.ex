@@ -32,7 +32,6 @@ defmodule Evaluator do
  
   def handle_call({ :expand, expr }, _from, { binding, scope }) do
     { _, meta, _ } = expr
-    # TODO: WOT M8, meta[:line] is nil??
     ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, scope })
     expanded = Macro.expand_once(expr, ex_scope)
  
@@ -51,29 +50,31 @@ defmodule Evaluator do
     { :stop, :normal, state }
   end
 
-  # TODO: should we raise an exception here?
-  def find_matching_clause(_, [], binding, scope) do
-    { nil, binding, scope }
-  end
-  def find_matching_clause(value, [clause | rest], binding, scope) do 
-    # does it match?
-    { [left], _, _ } = clause
-    clause_test = quote do
+  def find_matching_clause(value, clauses, binding, scope) do 
+    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
+    clause_list = Enum.map clauses, fn(clause) ->
+      { left, _, _ } = clause
+      esc_clause = Macro.escape clause
+
+      { left, [], esc_clause }
+    end
+
+    # if no clause is matched return :nomatch
+    nil_clause = {[{:_, [], Elixir}], [], :nomatch}
+    all_clauses = { :->, [], List.concat(clause_list, [nil_clause]) }
+
+    """
+    { :case, __META__,
+      [{:value, [], Elixir},
+       [do: all_clauses ]] }
+    """
+    match_clause_case = quote do
       case unquote(value) do
-        unquote(left) ->
-          true
-        _ ->
-          false
+        unquote(all_clauses)
       end
     end
-    { bool, new_binding, new_scope } = Evaluator.eval_quoted(clause_test, binding, scope)
-
-    # if it does we can send it back
-    if bool do
-      { clause, new_binding, new_scope }
-    else
-      Evaluator.find_matching_clause(value, rest, binding, scope)
-    end
+    
+    Evaluator.eval_quoted(match_clause_case, binding, scope)
   end
 
   # TODO: use scope on eval?
