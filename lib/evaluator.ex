@@ -1,6 +1,8 @@
 defmodule Evaluator do
   use GenServer.Behaviour
 
+  defrecord State, [binding: nil, scope: nil, stack: []]
+
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
     { _, _, quoted_params } = header
@@ -10,8 +12,11 @@ defmodule Evaluator do
 
     quote do
       def unquote(header) do
+        binding = unquote(vars)
+        scope = __ENV__
+
         { :ok, pid }
-          = :gen_server.start_link(Evaluator, { unquote(vars), __ENV__ }, [])
+          = :gen_server.start_link(Evaluator, State[binding: binding, scope: scope], [])
         return_value = Evaluator.next(pid, unquote(Macro.escape(body)))
 
         Evaluator.done(pid)
@@ -20,37 +25,45 @@ defmodule Evaluator do
     end
   end
  
-  def init({ binding, scope }) do
-    scope = :elixir_scope.vars_from_binding(:elixir_scope.to_erl_env(scope), binding)
-    { :ok, { binding, scope }}
+  def init(state) do
+    scope = :elixir_scope.vars_from_binding(:elixir_scope.to_erl_env(state.scope), state.binding)
+    { :ok, state.scope(scope) }
   end
   
-  def handle_call({ :eval, expr }, _from, { binding, scope }) do
-    { value, new_binding, new_scope } = Evaluator.eval_quoted(expr, binding, scope)
-    { :reply, value, { new_binding, new_scope }}
+  def handle_call({ :eval, expr }, _from, state) do
+    { value, new_state } = Evaluator.eval_quoted(expr, state)
+    { :reply, value, new_state }
   end
  
-  def handle_call({ :expand, expr }, _from, { binding, scope }) do
+  def handle_call({ :expand, expr }, _from, state) do
     { _, meta, _ } = expr
-    ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, scope })
+    ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, state.scope })
     expanded = Macro.expand_once(expr, ex_scope)
  
-    { :reply, expanded, { binding, scope }}
+    { :reply, expanded, state}
     end
 
-  def handle_call({ :match, { value, clauses }}, _from, { binding, scope }) do
-    { matching, new_binding, new_scope } = 
-      Evaluator.find_matching_clause(value, clauses, binding, scope)
+  def handle_call({ :match, { value, clauses }}, _from, state) do
+    { matching, new_state } = 
+      Evaluator.find_matching_clause(value, clauses, state)
 
     # TODO: is this right? scope should be specific to match operation
-    { :reply, matching, { new_binding, new_scope }}
+    { :reply, matching, new_state }
   end
  
   def handle_cast(:done, state) do
     { :stop, :normal, state }
   end
+  
+  def handle_cast(:push_state, state) do
+    { :noreply, state.stack([state | state.stack]) }
+  end
+  
+  def handle_cast(:pop_state, State[stack: [old_state | _]]) do
+    { :noreply, old_state }
+  end
 
-  def find_matching_clause(value, clauses, binding, scope) do 
+  def find_matching_clause(value, clauses, state) do 
     # generates `unquote(lhs) -> unquote(Macro.escape clause)`
     clause_list = Enum.map clauses, fn(clause) ->
       { left, _, _ } = clause
@@ -74,16 +87,20 @@ defmodule Evaluator do
       end
     end
     
-    Evaluator.eval_quoted(match_clause_case, binding, scope)
+    Evaluator.eval_quoted(match_clause_case, state)
   end
 
   # TODO: use scope on eval?
-  def eval_quoted(expr, binding, _) do
-    :elixir.eval_quoted([expr], binding)
+  def eval_quoted(expr, state) do
+    { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
+    { value, state.binding(binding).scope(scope) }
   end
 
   # client functions
+  def push_state(pid), do: :gen_server.cast(pid, :push_state)
+  def pop_state(pid), do: :gen_server.cast(pid, :pop_state)
   def done(pid), do: :gen_server.cast(pid, :done)
+
   def eval(pid, expr), do: :gen_server.call(pid, { :eval, expr })
   def expand(pid, expr), do: :gen_server.call(pid, { :expand, expr })
   def match(pid, value, clauses), do: :gen_server.call(pid, { :match, { value, clauses }})
@@ -141,8 +158,16 @@ defmodule Evaluator do
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
   def match_next(pid, value, { :-> , _, clauses }) do
+    # enter a new state level
+    Evaluator.push_state(pid)
+    
     matching_clause = Evaluator.match(pid, value, clauses)
     { _, _, right } = matching_clause
-    Evaluator.next(pid, right)
+    next_value = Evaluator.next(pid, right)
+    
+    # go back to the previous state level
+    Evaluator.pop_state(pid)
+
+    next_value
   end
 end
