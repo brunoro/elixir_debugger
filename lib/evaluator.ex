@@ -2,6 +2,7 @@ defmodule Evaluator do
   use GenServer.Behaviour
 
   defrecord State, [binding: nil, scope: nil, stack: []]
+  defrecord Pid, list: nil
 
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
@@ -13,7 +14,7 @@ defmodule Evaluator do
     quote do
       def unquote(header) do
         binding = unquote(vars)
-        scope = __ENV__
+        scope = :elixir_scope.to_erl_env(__ENV__)
 
         { :ok, pid }
           = :gen_server.start_link(Evaluator, State[binding: binding, scope: scope], [])
@@ -26,7 +27,7 @@ defmodule Evaluator do
   end
  
   def init(state) do
-    scope = :elixir_scope.vars_from_binding(:elixir_scope.to_erl_env(state.scope), state.binding)
+    scope = :elixir_scope.vars_from_binding(state.scope, state.binding)
     { :ok, state.scope(scope) }
   end
     
@@ -109,8 +110,12 @@ defmodule Evaluator do
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
     { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
-    { value, state.binding(binding).scope(scope) }
+    { wrap_pid(value), state.binding(binding).scope(scope) }
   end
+
+  # no pids shall pass
+  def wrap_pid(pid) when is_pid(pid), do: Pid[list: pid_to_list(pid)]
+  def wrap_pid(value),                do: value
 
   # client functions
   def done(pid),       do: :gen_server.cast(pid, :done)
@@ -151,7 +156,9 @@ defmodule Evaluator do
   def next(_, value) when is_number(value), do: value
   def next(_, value) when is_binary(value), do: value
   def next(_, value) when is_atom(value),   do: value
-
+  
+  def next(_, pid) when is_pid(pid), do: Pid[list: pid_to_list(pid)]
+  
   # case
   def next(pid, { :case, _, [condition | [do: clauses]] }) do
     condition_value = Evaluator.next(pid, condition)
@@ -173,24 +180,24 @@ defmodule Evaluator do
   # spawn should spawn another evaluator as well
   def next(pid, { :spawn, _, [fun] }) do
     state = Evaluator.get_state(pid)
+    { :ok, evaluator_pid } = :gen_server.start_link(Evaluator, state, [])
 
-    proc_pid = spawn fn ->
-      { :ok, evaluator_pid } = :gen_server.start_link(Evaluator, state, [])
+    spawn fn ->
       Evaluator.next(evaluator_pid, fun)
       Evaluator.done(evaluator_pid)
     end
 
     # pids are stored as binaries (because of `invalid quoted expression: #PID<..>`)
-    pid_to_list(proc_pid)
+    Pid[list: pid_to_list(evaluator_pid)]
   end
 
   # sending messages
-  # TODO: pids are being sent over the as binaries, which is clearly not a good idea
-  def next(pid, { :<-, _, [esc_dest_pid, msg] }) do
+  # TODO: all Process & Kernel methods taking pids as arguments should be reimplemented
+  def next(pid, { :<-, _, [dest_pid, msg] }) do
     msg_val  = Evaluator.next(pid, msg)
-    dest_pid = list_to_pid(Evaluator.next(pid, esc_dest_pid))
+    Pid[list: list] = Evaluator.next(pid, dest_pid)
 
-    dest_pid <- msg_val
+    list_to_pid(list) <- msg_val
   end
 
   # assignments
