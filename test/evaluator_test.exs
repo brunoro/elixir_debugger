@@ -26,26 +26,8 @@ defmodule EvaluatorTest do
     end
   end
 
-  defdebug case_binding_scope_fun(value) do
-    # var = { :ok, :foo }
-    var = value
-    case value do
-      { :ok, var } ->
-        var
-      _ ->
-        var 
-    end
-    var
-  end
-
   test "match expressions can change binding" do
     assert case_binding_fun({ :ok, :bar }) == :bar
     assert case_binding_fun(:bar) == :bar
   end
-
-  test "matching only affects current scope's binding" do
-    assert case_binding_scope_fun({ :ok, :foo }) == { :ok, :foo }
-    assert case_binding_scope_fun(:bar) == :bar
-  end
-
- end
+end

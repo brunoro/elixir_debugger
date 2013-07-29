@@ -64,7 +64,7 @@ defmodule Evaluator do
   # how to evaluate expressions 
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
-    { value, binding, scope } = :elixir.eval_change_state([expr], state.binding)
+    { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
     wrap_pid(value, state.binding(binding).scope(scope))
   end
 
@@ -78,6 +78,8 @@ defmodule Evaluator do
   end
   def wrap_pid(value, state), do: { value, state }
 
+  defp pid_name_prefix, do: "__PID_"
+
   # #PID<0.49.0> -> :"__PID_0_49_0__"
   def pid_name(pid) do
     esc_pid = pid |> pid_to_list 
@@ -86,18 +88,22 @@ defmodule Evaluator do
                   |> String.rstrip(">")
                   |> String.replace(".", "_") 
 
-    "__PID_#{esc_pid}__"
+    "#{pid_name_prefix}#{esc_pid}__"
   end
+
+  def is_pid_name?(bin), do: String.starts_with?(bin, pid_name_prefix)
 
   # functions manipulating state
-  def change_state(fun) do
-    state = Evaluator.get_state
-    { result, new_state } = fun(state)
-    Evaluator.put_state(new_state)
+  def change_state(pid, fun) do
+    state = Evaluator.get_state(pid)
+    { result, new_state } = fun.(state)
+
+    Evaluator.put_state(pid, new_state)
+    result
   end
 
-  def eval_change_state(expr) do
-    change_state fn(state) ->
+  def eval_change_state(pid, expr) do
+    change_state pid, fn(state) ->
       Evaluator.eval_quoted(expr, state)
     end
   end
@@ -124,15 +130,15 @@ defmodule Evaluator do
     Evaluator.eval_quoted(match_clause_case, state)
   end
 
-  def expand(expr) do
-    state = Evaluator.get_state
+  def expand(pid, expr) do
+    state = Evaluator.get_state(pid)
     { _, meta, _ } = expr
     ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, state.scope })
     Macro.expand_once(expr, ex_scope)
   end
 
-  def do_receive() do
-    state = Evaluator.get_state
+  def do_receive(pid) do
+    state = Evaluator.get_state(pid)
     receive_code = quote do
       receive do
         value -> value
@@ -142,11 +148,11 @@ defmodule Evaluator do
   end
 
   # expansions that lead to case-like expressions should be kept
-  defp do_or_expand(expr, fun) do 
-    expanded = Evaluator.expand(expr)
+  defp do_or_expand(pid, expr, fun) do 
+    expanded = Evaluator.expand(pid, expr)
     case expanded do
       { :case, _, _ } ->
-        Evaluator.next(expanded)
+        Evaluator.next(pid, expanded)
       _ ->
         fun.()
     end
@@ -161,54 +167,60 @@ defmodule Evaluator do
   def next(_, value) when is_binary(value), do: value
   def next(_, value) when is_atom(value),   do: value
   
-  # variables sholdn't be next'd
+  # PID variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
-  def next(_, { var, meta, mod }) when is_atom(var) and is_atom(mod) do
-    { var, meta, mod }
+  def next(pid, { var, meta, mod }) when is_atom(var) and is_atom(mod) do
+    expr = { var, meta, mod }
+    case is_pid_name?(atom_to_binary(var)) do
+      true ->
+        expr
+      _ ->
+        Evaluator.eval_change_state(pid, expr)
+    end
   end
 
   # case
-  def next({ :case, _, [condition | [do: clauses]] }) do
-    condition_value = Evaluator.next(condition)
-    Evaluator.match_next(condition_value, clauses) # is there more than do?
+  def next(pid, { :case, _, [condition | [[do: clauses]]] }) do
+    condition_value = Evaluator.next(pid, condition)
+    Evaluator.match_next(pid, condition_value, clauses) # is there more than do?
   end
 
   # receive
-  def next({ :receive, _, [[do: clauses]] }) do
-    received_value = Evaluator.do_receive(state)
-    Evaluator.match_next(received_value, clauses) 
+  def next(pid, { :receive, _, [[do: clauses]] }) do
+    received_value = Evaluator.do_receive(pid)
+    Evaluator.match_next(pid, received_value, clauses) 
   end
 
   # assignments
-  def next({ :=, meta, [left | [right]] }) do
-    right_value = Evaluator.next(right)
+  def next(pid, { :=, meta, [left | [right]] }) do
+    right_value = Evaluator.next(pid, right)
 
-    Evaluator.eval_change_state({ :=, meta, [left | [right_value]] }, state)
+    Evaluator.eval_change_state(pid, { :=, meta, [left | [right_value]] })
   end
 
   # list of expressions
-  def next({ type, meta, expr_list }) when is_list(expr_list) do
+  def next(pid, { type, meta, expr_list }) when is_list(expr_list) do
     expr = { type, meta, expr_list }
 
     do_or_expand pid, expr, fn ->
-      value_list = Enum.map(expr_list, Evaluator.next(&1))
-      Evaluator.eval_change_state({ type, meta, value_list })
+      value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
+      Evaluator.eval_change_state(pid, { type, meta, value_list })
     end
   end
 
   # other expressions are evaluated directly
-  def next(expr) do
-    do_or_expand expr, fn ->
-      Evaluator.eval_change_state(expr)
+  def next(pid, expr) do
+    do_or_expand pid, expr, fn ->
+      Evaluator.eval_change_state(pid, expr)
     end
   end
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
   def match_next(pid, value, { :-> , _, clauses }) do
-    { _, _, right } = change_state fn(state) ->
+    { _, _, right } = change_state pid, fn(state) ->
       Evaluator.find_matching_clause(value, clauses, state)
     end
-    Evaluator.next(right)
+    Evaluator.next(pid, right)
   end
 end
