@@ -1,6 +1,6 @@
 defmodule Debugger do
-  import Debugger.Runner
-  import Debugger.Coordinator
+  alias Debugger.Runner, as: Runner
+  alias Debugger.Coordinator, as: Coordinator
 
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
@@ -14,11 +14,10 @@ defmodule Debugger do
         binding = unquote(vars)
         scope = :elixir_scope.to_erl_env(__ENV__)
 
-        { :ok, pid }
-          = :gen_server.start_link(Coordinator, State[binding: binding, scope: scope], [])
+        { :ok, pid } = Coordinator.spawn(binding, scope)
         return_value = Runner.next(pid, unquote(Macro.escape(body)))
 
-        Evaluator.done(pid)
+        Coordinator.done(pid)
         return_value
       end
     end

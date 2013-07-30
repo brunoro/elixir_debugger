@@ -1,8 +1,8 @@
 Code.require_file "test_helper.exs", __DIR__
 
-defmodule EvaluatorTest do
+defmodule CaseTest do
   use ExUnit.Case
-  import Evaluator
+  import Debugger
   
   defdebug if_case_fun(value) do
     other = value + 1

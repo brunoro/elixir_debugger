@@ -1,4 +1,6 @@
 defmodule Debugger.Runner do
+  alias Debugger.Coordinator, as: Coordinator
+
   # how to evaluate expressions 
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
@@ -28,7 +30,6 @@ defmodule Debugger.Runner do
 
     "#{pid_name_prefix}#{esc_pid}__"
   end
-
   def is_pid_name?(bin), do: String.starts_with?(bin, pid_name_prefix)
 
   # functions manipulating state
@@ -42,7 +43,7 @@ defmodule Debugger.Runner do
 
   def eval_change_state(pid, expr) do
     change_state pid, fn(state) ->
-      Runner.eval_quoted(expr, state)
+      eval_quoted(expr, state)
     end
   end
 
@@ -65,7 +66,7 @@ defmodule Debugger.Runner do
       end
     end
     
-    Runner.eval_quoted(match_clause_case, state)
+    eval_quoted(match_clause_case, state)
   end
 
   def expand(pid, expr) do
@@ -82,21 +83,21 @@ defmodule Debugger.Runner do
         value -> value
       end
     end
-    Runner.eval_quoted(receive_code, state)
+    eval_quoted(receive_code, state)
   end
 
   # expansions that lead to case-like expressions should be kept
   defp do_or_expand(pid, expr, fun) do 
-    expanded = Runner.expand(pid, expr)
+    expanded = expand(pid, expr)
     case expanded do
       { :case, _, _ } ->
-        Runner.next(pid, expanded)
+        next(pid, expanded)
       _ ->
         fun.()
     end
   end
 
-  # Makes nested Runner.next calls until leafs are reached.
+  # Makes nested next calls until leafs are reached.
   # Evaluates leaf expressions by sending them to pid, which
   # keeps the current scope and binding
 
@@ -113,27 +114,27 @@ defmodule Debugger.Runner do
       true ->
         expr
       _ ->
-        Runner.eval_change_state(pid, expr)
+        eval_change_state(pid, expr)
     end
   end
 
   # case
   def next(pid, { :case, _, [condition | [[do: clauses]]] }) do
-    condition_value = Runner.next(pid, condition)
-    Runner.match_next(pid, condition_value, clauses) # is there more than do?
+    condition_value = next(pid, condition)
+    match_next(pid, condition_value, clauses) # is there more than do?
   end
 
   # receive
   def next(pid, { :receive, _, [[do: clauses]] }) do
-    received_value = Runner.do_receive(pid)
-    Runner.match_next(pid, received_value, clauses) 
+    received_value = do_receive(pid)
+    match_next(pid, received_value, clauses) 
   end
 
   # assignments
   def next(pid, { :=, meta, [left | [right]] }) do
-    right_value = Runner.next(pid, right)
+    right_value = next(pid, right)
 
-    Runner.eval_change_state(pid, { :=, meta, [left | [right_value]] })
+    eval_change_state(pid, { :=, meta, [left | [right_value]] })
   end
 
   # list of expressions
@@ -141,15 +142,15 @@ defmodule Debugger.Runner do
     expr = { type, meta, expr_list }
 
     do_or_expand pid, expr, fn ->
-      value_list = Enum.map(expr_list, Runner.next(pid, &1))
-      Runner.eval_change_state(pid, { type, meta, value_list })
+      value_list = Enum.map(expr_list, next(pid, &1))
+      eval_change_state(pid, { type, meta, value_list })
     end
   end
 
   # other expressions are evaluated directly
   def next(pid, expr) do
     do_or_expand pid, expr, fn ->
-      Runner.eval_change_state(pid, expr)
+      eval_change_state(pid, expr)
     end
   end
 
@@ -157,8 +158,8 @@ defmodule Debugger.Runner do
   # the first clause matching the condition is found
   def match_next(pid, value, { :-> , _, clauses }) do
     { _, _, right } = change_state pid, fn(state) ->
-      Runner.find_matching_clause(value, clauses, state)
+      find_matching_clause(value, clauses, state)
     end
-    Runner.next(pid, right)
+    next(pid, right)
   end
 end

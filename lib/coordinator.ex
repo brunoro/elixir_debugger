@@ -3,12 +3,23 @@ defmodule Debugger.Coordinator do
 
   defrecord State, [binding: nil, scope: nil, stack: []]
 
+  # public interface
+  def spawn(binding, scope) do
+    :gen_server.start_link(Debugger.Coordinator, State[binding: binding, scope: scope], [])
+  end
+
+  # gen_server methods
   def init(state) do
     scope = :elixir_scope.vars_from_binding(state.scope, state.binding)
     { :ok, state.scope(scope) }
   end
     
-  # casts
+  ## handle_call
+  def handle_call(:get_state, _from, state) do
+    { :reply, state, state }
+  end
+
+  ## handle_cast
   def handle_cast(:done, state) do
     { :stop, :normal, state }
   end
@@ -24,11 +35,6 @@ defmodule Debugger.Coordinator do
 
   def handle_cast({ :put_state, new_state }, _state) do
     { :noreply, new_state }
-  end
-
-  # calls
-  def handle_call(:get_state, _from, state) do
-    { :reply, state, state }
   end
 
   # client functions
