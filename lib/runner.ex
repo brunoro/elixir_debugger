@@ -1,66 +1,4 @@
-defmodule Evaluator do
-  use GenServer.Behaviour
-
-  defrecord State, [binding: nil, scope: nil, stack: []]
-
-  defmacro defdebug(header, do: body) do
-    # TODO: binding retrieved via __CALLER__ had all variables as nil
-    { _, _, quoted_params } = header
-    vars = Enum.map quoted_params || [], fn({ var, meta, module }) ->
-      { var, ({ var, meta, module }) }
-    end
-
-    quote do
-      def unquote(header) do
-        binding = unquote(vars)
-        scope = :elixir_scope.to_erl_env(__ENV__)
-
-        { :ok, pid }
-          = :gen_server.start_link(Evaluator, State[binding: binding, scope: scope], [])
-        return_value = Evaluator.next(pid, unquote(Macro.escape(body)))
-
-        Evaluator.done(pid)
-        return_value
-      end
-    end
-  end
- 
-  def init(state) do
-    scope = :elixir_scope.vars_from_binding(state.scope, state.binding)
-    { :ok, state.scope(scope) }
-  end
-    
-  # casts
-  def handle_cast(:done, state) do
-    { :stop, :normal, state }
-  end
-  
-  def handle_cast(:pop_stack, State[stack: [state]]), do: { :noreply, state }
-  def handle_cast(:pop_stack, State[stack: [old_state | _]]) do
-    { :noreply, old_state }
-  end
-
-  def handle_cast(:push_stack, state) do
-    { :noreply, state.stack([state | state.stack]) }
-  end
-
-  def handle_cast({ :put_state, new_state }, _state) do
-    { :noreply, new_state }
-  end
-
-  # calls
-  def handle_call(:get_state, _from, state) do
-    { :reply, state, state }
-  end
-
-  # client functions
-  def done(pid),             do: :gen_server.cast(pid, :done)
-  def get_state(pid),        do: :gen_server.call(pid, :get_state)
-  def put_state(pid, state), do: :gen_server.cast(pid, { :put_state, state })
-
-  def pop_stack(pid),        do: :gen_server.cast(pid, :pop_stack)
-  def push_stack(pid),       do: :gen_server.cast(pid, :push_stack)
-
+defmodule Debugger.Runner do
   # how to evaluate expressions 
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
@@ -95,16 +33,16 @@ defmodule Evaluator do
 
   # functions manipulating state
   def change_state(pid, fun) do
-    state = Evaluator.get_state(pid)
+    state = Coordinator.get_state(pid)
     { result, new_state } = fun.(state)
 
-    Evaluator.put_state(pid, new_state)
+    Coordinator.put_state(pid, new_state)
     result
   end
 
   def eval_change_state(pid, expr) do
     change_state pid, fn(state) ->
-      Evaluator.eval_quoted(expr, state)
+      Runner.eval_quoted(expr, state)
     end
   end
 
@@ -127,38 +65,38 @@ defmodule Evaluator do
       end
     end
     
-    Evaluator.eval_quoted(match_clause_case, state)
+    Runner.eval_quoted(match_clause_case, state)
   end
 
   def expand(pid, expr) do
-    state = Evaluator.get_state(pid)
+    state = Coordinator.get_state(pid)
     { _, meta, _ } = expr
     ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, state.scope })
     Macro.expand_once(expr, ex_scope)
   end
 
   def do_receive(pid) do
-    state = Evaluator.get_state(pid)
+    state = Coordinator.get_state(pid)
     receive_code = quote do
       receive do
         value -> value
       end
     end
-    Evaluator.eval_quoted(receive_code, state)
+    Runner.eval_quoted(receive_code, state)
   end
 
   # expansions that lead to case-like expressions should be kept
   defp do_or_expand(pid, expr, fun) do 
-    expanded = Evaluator.expand(pid, expr)
+    expanded = Runner.expand(pid, expr)
     case expanded do
       { :case, _, _ } ->
-        Evaluator.next(pid, expanded)
+        Runner.next(pid, expanded)
       _ ->
         fun.()
     end
   end
 
-  # Makes nested Evaluator.next calls until leafs are reached.
+  # Makes nested Runner.next calls until leafs are reached.
   # Evaluates leaf expressions by sending them to pid, which
   # keeps the current scope and binding
 
@@ -175,27 +113,27 @@ defmodule Evaluator do
       true ->
         expr
       _ ->
-        Evaluator.eval_change_state(pid, expr)
+        Runner.eval_change_state(pid, expr)
     end
   end
 
   # case
   def next(pid, { :case, _, [condition | [[do: clauses]]] }) do
-    condition_value = Evaluator.next(pid, condition)
-    Evaluator.match_next(pid, condition_value, clauses) # is there more than do?
+    condition_value = Runner.next(pid, condition)
+    Runner.match_next(pid, condition_value, clauses) # is there more than do?
   end
 
   # receive
   def next(pid, { :receive, _, [[do: clauses]] }) do
-    received_value = Evaluator.do_receive(pid)
-    Evaluator.match_next(pid, received_value, clauses) 
+    received_value = Runner.do_receive(pid)
+    Runner.match_next(pid, received_value, clauses) 
   end
 
   # assignments
   def next(pid, { :=, meta, [left | [right]] }) do
-    right_value = Evaluator.next(pid, right)
+    right_value = Runner.next(pid, right)
 
-    Evaluator.eval_change_state(pid, { :=, meta, [left | [right_value]] })
+    Runner.eval_change_state(pid, { :=, meta, [left | [right_value]] })
   end
 
   # list of expressions
@@ -203,15 +141,15 @@ defmodule Evaluator do
     expr = { type, meta, expr_list }
 
     do_or_expand pid, expr, fn ->
-      value_list = Enum.map(expr_list, Evaluator.next(pid, &1))
-      Evaluator.eval_change_state(pid, { type, meta, value_list })
+      value_list = Enum.map(expr_list, Runner.next(pid, &1))
+      Runner.eval_change_state(pid, { type, meta, value_list })
     end
   end
 
   # other expressions are evaluated directly
   def next(pid, expr) do
     do_or_expand pid, expr, fn ->
-      Evaluator.eval_change_state(pid, expr)
+      Runner.eval_change_state(pid, expr)
     end
   end
 
@@ -219,8 +157,8 @@ defmodule Evaluator do
   # the first clause matching the condition is found
   def match_next(pid, value, { :-> , _, clauses }) do
     { _, _, right } = change_state pid, fn(state) ->
-      Evaluator.find_matching_clause(value, clauses, state)
+      Runner.find_matching_clause(value, clauses, state)
     end
-    Evaluator.next(pid, right)
+    Runner.next(pid, right)
   end
 end
