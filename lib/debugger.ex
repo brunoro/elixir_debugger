@@ -1,6 +1,6 @@
 defmodule Debugger do
-  alias Debugger.Runner, as: Runner
-  alias Debugger.Coordinator, as: Coordinator
+  alias Debugger.Runner
+  alias Debugger.Coordinator
 
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
