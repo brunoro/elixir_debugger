@@ -1,6 +1,7 @@
 defmodule Debugger do
   alias Debugger.Runner
   alias Debugger.Coordinator
+  alias Debugger.PIDTable
 
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
@@ -11,13 +12,16 @@ defmodule Debugger do
 
     quote do
       def unquote(header) do
+        PIDTable.start_link
+
         binding = unquote(vars)
         scope = :elixir_scope.to_erl_env(__ENV__)
 
-        { :ok, pid } = Coordinator.spawn(binding, scope)
-        return_value = Runner.next(pid, unquote(Macro.escape(body)))
+        ret = PIDTable.put(self, binding, scope)
 
-        Coordinator.done(pid)
+        return_value = Runner.next(unquote(Macro.escape(body)))
+
+        PIDTable.delete(self)
         return_value
       end
     end

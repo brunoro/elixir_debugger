@@ -1,5 +1,5 @@
 defmodule Debugger.Evaluator do
-  import Debugger.PidName
+  alias Debugger.PIDName
 
   # how to evaluate expressions 
   # TODO: use scope on eval?
@@ -11,7 +11,7 @@ defmodule Debugger.Evaluator do
   # add pids to binding with some name mangling
   # NO PIDS SHALL PASS!!
   def wrap_pid(pid, state) when is_pid(pid) do 
-    var = pid |> Pid.to_pid_name |> binary_to_atom
+    var = pid |> PIDName.to_pid_name |> binary_to_atom
     new_binding = Keyword.put(state.binding, var, pid)
 
     {{ var, [], Elixir }, state.binding(new_binding) }

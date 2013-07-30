@@ -4,8 +4,8 @@ defmodule Debugger.Coordinator do
   defrecord State, [binding: nil, scope: nil, stack: []]
 
   # public interface
-  def spawn(binding, scope) do
-    :gen_server.start_link(Debugger.Coordinator, State[binding: binding, scope: scope], [])
+  def start_link(binding, scope) do
+    :gen_server.start_link(__MODULE__, State[binding: binding, scope: scope], [])
   end
 
   # gen_server methods

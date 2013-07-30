@@ -1,4 +1,4 @@
-defmodule Debugger.PidName do
+defmodule Debugger.PIDName do
   defp pid_name_prefix, do: "__PID_"
 
   # #PID<0.49.0> -> :"__PID_0_49_0__"
