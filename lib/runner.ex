@@ -67,8 +67,20 @@ defmodule Debugger.Runner do
 
   # receive
   def next({ :receive, _, [[do: clauses]] }) do
-    received_value = with_state &Evaluator.do_receive(&1)
+    { :receive, received_value } = with_state &Evaluator.do_receive(&1)
     match_next(received_value, clauses) 
+  end
+
+  # receive-after
+  def next({ :receive, _, [[do: do_clauses, after: after_clause]] }) do
+    {:->, _, [{ [after_time], _, after_expr }]} = after_clause
+
+    case with_state &Evaluator.do_receive(&1, after_time) do
+      { :receive, received_value } ->
+        match_next(received_value, do_clauses) 
+      :after ->
+        next(after_expr) 
+    end
   end
 
   # assignments

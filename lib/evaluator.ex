@@ -28,7 +28,19 @@ defmodule Debugger.Evaluator do
   def do_receive(state) do
     receive_code = quote do
       receive do
-        value -> value
+        value -> { :receive, value }
+      end
+    end
+    
+    { result, _ } = Evaluator.eval_quoted(receive_code, state)
+    result 
+  end
+  def do_receive(state, after_time) do
+    receive_code = quote do
+      receive do
+        value -> { :receive, value }
+      after
+        unquote(after_time) -> :after
       end
     end
     
