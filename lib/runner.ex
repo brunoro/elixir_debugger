@@ -15,7 +15,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_change_state(expr) do
-    change_state Evaluator.eval_quoted(expr, &1)
+    change_state &Evaluator.eval_quoted(expr, &1)
   end
 
   def with_state(fun) do
@@ -25,12 +25,12 @@ defmodule Debugger.Runner do
   end
 
   def eval_with_state(expr) do
-    with_state Evaluator.eval_quoted(expr, &1)
+    with_state &Evaluator.eval_quoted(expr, &1)
   end
 
   # expansions that lead to case-like expressions should be kept
   defp do_or_expand(expr, fun) do 
-    expanded = with_state Evaluator.expand(expr, &1)
+    expanded = with_state &Evaluator.expand(expr, &1)
 
     case expanded do
       { :case, _, _ } ->
@@ -67,7 +67,7 @@ defmodule Debugger.Runner do
 
   # receive
   def next({ :receive, _, [[do: clauses]] }) do
-    received_value = with_state Evaluator.do_receive(&1)
+    received_value = with_state &Evaluator.do_receive(&1)
     match_next(received_value, clauses) 
   end
 
@@ -83,7 +83,7 @@ defmodule Debugger.Runner do
     expr = { type, meta, expr_list }
 
     do_or_expand expr, fn ->
-      value_list = Enum.map(expr_list, next(&1))
+      value_list = Enum.map(expr_list, &next(&1))
       eval_change_state({ type, meta, value_list })
     end
   end
