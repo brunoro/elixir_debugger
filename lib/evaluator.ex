@@ -14,7 +14,7 @@ defmodule Debugger.Evaluator do
     var = pid |> PIDName.to_pid_name |> binary_to_atom
     new_binding = Keyword.put(state.binding, var, pid)
 
-    {{ var, [], Elixir }, state.binding(new_binding) }
+    {{ var, [], nil }, state.binding(new_binding) }
   end
   def wrap_pid(value, state), do: { value, state }
 

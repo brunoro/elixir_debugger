@@ -56,7 +56,7 @@ defmodule ControlTest do
     defdebug bar(x) do if x do; foo = 2; else foo = foo; end; foo; end
   end
 
-  test "binding vars on if-else" do
+  test "binding variables on if-else" do
     assert 1 == vars_if_test_f1
     assert 1 == VarsIfTest.bar(false)
     assert 2 == VarsIfTest.bar(true)
@@ -114,7 +114,7 @@ defmodule ControlTest do
   end
 
   test "try" do
-    2 == try_test_f1
+    assert 2 == try_test_f1
   end
 
   defdebug try_else_test_f1 do
@@ -322,6 +322,7 @@ defmodule ControlTest do
   defmodule VarsTestCase do
     defdebug foo, do: 1
     defdebug bar(x) do
+      foo = 1
       case x do
         true -> foo = 2
         false -> foo = foo
