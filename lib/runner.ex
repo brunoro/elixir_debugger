@@ -101,6 +101,12 @@ defmodule Debugger.Runner do
     { _, _, right } = change_state fn(state) ->
       Evaluator.find_matching_clause(value, clauses, state)
     end
-    next(right)
+    result = next(right)
+
+    change_state fn(state) ->
+      { nil, Evaluator.initialize_clause_vars(clauses, state) }
+    end
+
+    result
   end
 end

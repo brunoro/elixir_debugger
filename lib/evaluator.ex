@@ -54,8 +54,29 @@ defmodule Debugger.Evaluator do
         unquote(all_clauses)
       end
     end
-    
+
     eval_quoted(match_clause_case, state)
   end
 
+  def initialize_clause_vars(clauses, state) do
+    defined_vars = Enum.reduce clauses, HashSet.new, fn(clause, vars) ->
+      { _, _, right } = clause
+      clause_vars = collect_vars(right, vars)
+    end
+
+    match_binding = Enum.map defined_vars, &({ &1, nil })
+    prefer_non_nil = fn(_k, v1, v2) -> v1 || v2 end
+
+    state.binding(Keyword.merge(state.binding, match_binding, prefer_non_nil))
+  end
+
+  def collect_vars({ :=, _, [left | [right]] }, vars) do
+    { var, _, _ } = left
+    collect_vars(right, Set.put(vars, var))
+  end
+  def collect_vars({ _, _, expr_list }, vars) when is_list(expr_list) do
+    Enum.reduce(expr_list, vars, &collect_vars(&1, &2))
+  end
+  # other expressions are evaluated directly
+  def collect_vars(_, vars), do: vars
 end

@@ -193,8 +193,8 @@ defmodule ControlTest do
     receive do
       :foo ->
         b = 10
-        _ -> 20
-      end
+      _ -> 20
+    end
     b
   end
   defdebug vars_receive_test_f3() do
