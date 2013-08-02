@@ -42,10 +42,6 @@ defmodule Debugger.Runner do
 
   # Makes nested next calls until leafs are reached.
   # keeps the current scope and binding
-  # values shouldn't be evaluated
-  def next(value) when is_number(value), do: value
-  def next(value) when is_binary(value), do: value
-  def next(value) when is_atom(value),   do: value
 
   # PID variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
@@ -119,7 +115,10 @@ defmodule Debugger.Runner do
     end
   end
 
-  # ignore everything else (lists, tuples, and?)
+  # lists aren't escaped like tuples
+  def next(expr_list) when is_list(expr_list), do: Enum.map(expr_list, &next(&1))
+
+  # ignore everything else (atoms, binaries, numbers, unescaped tuples, etc.)
   def next(other), do: other
 
   # pattern matching operator should evaluate clauses until
