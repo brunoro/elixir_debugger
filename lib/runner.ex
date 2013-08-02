@@ -46,7 +46,7 @@ defmodule Debugger.Runner do
   def next(value) when is_number(value), do: value
   def next(value) when is_binary(value), do: value
   def next(value) when is_atom(value),   do: value
-  
+
   # PID variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
   def next({ var, meta, mod }) when is_atom(var) and is_atom(mod) do
@@ -83,6 +83,17 @@ defmodule Debugger.Runner do
     end
   end
 
+  # try
+  def next({ :try, _, [[do: do_clause, catch: catch_clauses]] }) do
+    case next(do_clause) do
+      { :exception, exception } ->
+        match_next(exception, catch_clauses) 
+      # TODO: next should return { status, result }, and we should match { :ok, value }
+      value ->
+        value
+    end
+  end
+
   # assignments
   def next({ :=, meta, [left | [right]] }) do
     right_value = next(right)
@@ -101,11 +112,15 @@ defmodule Debugger.Runner do
   end
 
   # other expressions are evaluated directly
-  def next(expr) do
+  def next({ left, meta, right }) do
+    expr = { left , meta, right }
     do_or_expand expr, fn ->
       eval_change_state(expr)
     end
   end
+
+  # ignore everything else (lists, tuples, and?)
+  def next(other), do: other
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
