@@ -32,7 +32,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { result, _ } = Evaluator.eval_quoted(receive_code, state)
+    { result, _ } = eval_quoted(receive_code, state)
     result 
   end
   def do_receive(state, after_time) do
@@ -44,7 +44,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { result, _ } = Evaluator.eval_quoted(receive_code, state)
+    { result, _ } = eval_quoted(receive_code, state)
     result 
   end
 

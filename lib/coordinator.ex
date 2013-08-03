@@ -24,13 +24,17 @@ defmodule Debugger.Coordinator do
     { :stop, :normal, state }
   end
   
-  def handle_cast(:pop_stack, State[stack: [state]]), do: { :noreply, state }
-  def handle_cast(:pop_stack, State[stack: [old_state | _]]) do
-    { :noreply, old_state }
+  def handle_cast(:pop_stack, state) do 
+    case state do
+      State[stack: []] ->
+        { :noreply, state }
+      State[stack: [{ binding, scope } | rest]] ->
+        { :noreply, State[binding: binding, scope: scope, stack: rest] }
+    end
   end
 
   def handle_cast(:push_stack, state) do
-    { :noreply, state.stack([state | state.stack]) }
+    { :noreply, state.stack([{ state.binding, state.scope } | state.stack]) }
   end
 
   def handle_cast({ :put_state, new_state }, _state) do
