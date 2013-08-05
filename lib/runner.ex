@@ -80,10 +80,13 @@ defmodule Debugger.Runner do
   end
 
   # try
-  def next({ :try, _, [[do: do_clause, catch: catch_clauses]] }) do
-    case next(do_clause) do
-      { :exception, exception } ->
-        match_next(exception, catch_clauses) 
+  def next({ :try, _, [[do: do_clause, rescue: rescue_clauses]] }) do
+    result = Evaluator.do_try fn ->
+      next(do_clause) 
+    end
+    case result do
+      { :rescue, exception } ->
+        match_next(exception, rescue_clauses) 
       # TODO: next should return { status, result }, and we should match { :ok, value }
       value ->
         value

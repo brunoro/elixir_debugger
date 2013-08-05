@@ -48,6 +48,15 @@ defmodule Debugger.Evaluator do
     result 
   end
 
+  def do_try(fun) do
+    try do
+      fun.()
+    rescue
+      exception -> 
+        { :rescue, exception }
+    end
+  end
+ 
   def find_matching_clause(value, clauses, state) do 
     # generates `unquote(lhs) -> unquote(Macro.escape clause)`
     clause_list = Enum.map clauses, fn(clause) ->
@@ -73,7 +82,7 @@ defmodule Debugger.Evaluator do
   def initialize_clause_vars(clauses, state) do
     defined_vars = Enum.reduce clauses, HashSet.new, fn(clause, vars) ->
       { _, _, right } = clause
-      clause_vars = collect_vars(right, vars)
+      collect_vars(right, vars)
     end
 
     match_binding = Enum.map defined_vars, &({ &1, nil })
