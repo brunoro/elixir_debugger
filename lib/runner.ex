@@ -86,6 +86,17 @@ defmodule Debugger.Runner do
     end
   end
 
+  # result has the { status, result } form
+  # runs fun(result) if status matches the parameter
+  # otherwise returns result
+  def if_status(status, result, fun) do
+    case result do
+      { status, value } ->
+        fun.(value)
+      other ->
+        other
+    end
+  end
 
   # Runner functions can return either 
   # { status, result } or { status, result, state }
@@ -147,11 +158,8 @@ defmodule Debugger.Runner do
 
   # assignments
   def next({ :=, meta, [left | [right]] }) do
-    case next(right) do
-      { :ok, right_value } ->
-        eval_change_state({ :=, meta, [left | [right_value]] })
-      other ->
-        other
+    if_status :ok, next(right), fn(right_value) ->
+      eval_change_state({ :=, meta, [left | [right_value]] })
     end
   end
 
@@ -160,11 +168,8 @@ defmodule Debugger.Runner do
     expr = { type, meta, expr_list }
 
     do_or_expand expr, fn ->
-      case map_next_while_ok(expr_list) do
-        { :ok, value_list } ->
-          eval_change_state({ type, meta, value_list })
-        other ->
-          other
+      if_status :ok, map_next_while_ok(expr_list), fn(value_list) ->
+        eval_change_state({ type, meta, value_list })
       end
     end
   end
@@ -176,17 +181,6 @@ defmodule Debugger.Runner do
       eval_change_state(expr)
     end
   end
-
-  """
-  def next(expr_list) when is_list(expr_list) do
-    value_list = Enum.map expr_list, fn(expr) ->
-      { status, value } = next(expr)
-      value
-    end
-
-    { :ok, value_list }
-  end
-  """
 
   # lists aren't escaped like tuples
   def next(expr_list) when is_list(expr_list) do
@@ -203,15 +197,14 @@ defmodule Debugger.Runner do
       Evaluator.find_matching_clause(value, clauses, state)
     end
     
-    case matching_clause do
-      { :ok, { _, _, right }} ->
-        result = next(right)
-        change_state fn(state) ->
-          Evaluator.initialize_clause_vars(clauses, state)
-        end
-        result
-      other ->
-        other
+    if_status :ok, matching_clause, fn({ _, _, right }) ->
+      result = next(right)
+
+      change_state fn(state) ->
+        Evaluator.initialize_clause_vars(clauses, state)
+      end
+
+      result
     end
   end
 end

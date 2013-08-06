@@ -117,7 +117,7 @@ defmodule ControlTest do
     try do
       x = 1 + "a"
     rescue
-      ArithmeticError -> 1
+      ArithmeticError[messge: _] -> 1
     end
   end
 
