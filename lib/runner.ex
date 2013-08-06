@@ -52,6 +52,50 @@ defmodule Debugger.Runner do
     end
   end
 
+  # maps fun |> filter over col while fun |> condition is true
+  # otherwise returns fun(failing_element)
+  def map_filter_while(col, condition, filter, fun) do 
+    ret = do_map_filter_while(col, condition, filter, fun, [])
+    case ret do
+      list when is_list(list) ->
+        Enum.reverse list
+      other ->
+        other
+    end
+  end
+
+  defp do_map_filter_while([], _con, _fil, _fun, acc), do: acc
+  defp do_map_filter_while([h | t], con, fil, fun, acc) do
+    fh = fun.(h)
+    if con.(fh) do
+      do_map_filter_while(t, con, fil, fun, [fil.(fh) | acc])
+    else
+      fh
+    end
+  end
+
+  # maps next/1 while status returned is :ok, otherwise returns the
+  # failing element of the list with its status
+  def map_next_while_ok(expr_list) do
+    v = map_filter_while expr_list, &is_status_ok?(&1), &strip_status(&1), &next(&1)
+    case v do
+      value_list when is_list(value_list) ->
+        { :ok, value_list }
+      other ->
+        other
+    end
+  end
+
+
+  # Runner functions can return either 
+  # { status, result } or { status, result, state }
+  def is_status_ok?({ status, _ }), do: status == :ok
+  def is_status_ok?({ status, _, _ }), do: status == :ok
+
+  # removes status from a Runner return value
+  def strip_status({ _, a }), do: a
+  def strip_status({ _, a, b }), do: { a, b }
+
   # Makes nested next calls until leafs are reached.
   # keeps the current scope and binding
 
@@ -103,8 +147,12 @@ defmodule Debugger.Runner do
 
   # assignments
   def next({ :=, meta, [left | [right]] }) do
-    { :ok, right_value } = next(right)
-    eval_change_state({ :=, meta, [left | [right_value]] })
+    case next(right) do
+      { :ok, right_value } ->
+        eval_change_state({ :=, meta, [left | [right_value]] })
+      other ->
+        other
+    end
   end
 
   # list of expressions
@@ -112,11 +160,12 @@ defmodule Debugger.Runner do
     expr = { type, meta, expr_list }
 
     do_or_expand expr, fn ->
-      value_list = Enum.map expr_list, fn(expr) ->
-        { status, value } = next(expr)
-        value
+      case map_next_while_ok(expr_list) do
+        { :ok, value_list } ->
+          eval_change_state({ type, meta, value_list })
+        other ->
+          other
       end
-      eval_change_state({ type, meta, value_list })
     end
   end
 
@@ -128,7 +177,7 @@ defmodule Debugger.Runner do
     end
   end
 
-  # lists aren't escaped like tuples
+  """
   def next(expr_list) when is_list(expr_list) do
     value_list = Enum.map expr_list, fn(expr) ->
       { status, value } = next(expr)
@@ -137,6 +186,12 @@ defmodule Debugger.Runner do
 
     { :ok, value_list }
   end
+  """
+
+  # lists aren't escaped like tuples
+  def next(expr_list) when is_list(expr_list) do
+    map_next_while_ok expr_list
+  end
 
   # ignore everything else (atoms, binaries, numbers, unescaped tuples, etc.)
   def next(other), do: { :ok, other }
@@ -144,15 +199,19 @@ defmodule Debugger.Runner do
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
   def match_next(value, { :-> , _, clauses }) do
-    { :ok, { _, _, right }} = change_state fn(state) ->
+    matching_clause = change_state fn(state) ->
       Evaluator.find_matching_clause(value, clauses, state)
     end
-    result = next(right)
-
-    change_state fn(state) ->
-      Evaluator.initialize_clause_vars(clauses, state)
+    
+    case matching_clause do
+      { :ok, { _, _, right }} ->
+        result = next(right)
+        change_state fn(state) ->
+          Evaluator.initialize_clause_vars(clauses, state)
+        end
+        result
+      other ->
+        other
     end
-
-    result
   end
 end
