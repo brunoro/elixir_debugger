@@ -113,8 +113,17 @@ defmodule ControlTest do
     end
   end
 
+  defdebug try_test_f2 do
+    try do
+      x = 1 + "a"
+    rescue
+      ArithmeticError -> 1
+    end
+  end
+
   test "try" do
     assert 2 == try_test_f1
+    assert 1 == try_test_f2
   end
 
   defdebug try_else_test_f1 do

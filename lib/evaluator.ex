@@ -4,8 +4,15 @@ defmodule Debugger.Evaluator do
   # how to evaluate expressions 
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
-    { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
-    wrap_pid(value, state.binding(binding).scope(scope))
+    try do
+      { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
+      { clean_value, new_state } = wrap_pid(value, state.binding(binding).scope(scope))
+      { :ok, clean_value, new_state }
+    catch
+      exception -> { :catch, exception }
+    rescue
+      exception -> { :rescue, exception }
+    end
   end
 
   # add pids to binding with some name mangling
@@ -22,7 +29,7 @@ defmodule Debugger.Evaluator do
   def expand(expr, state) do
     { _, meta, _ } = expr
     ex_scope = :elixir_scope.to_ex_env({ meta[:line] || 0, state.scope })
-    Macro.expand_once(expr, ex_scope)
+    { :ok, Macro.expand_once(expr, ex_scope) }
   end
 
   def do_receive(state) do
@@ -32,31 +39,22 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { result, _ } = eval_quoted(receive_code, state)
-    result 
+    { :ok, { status, value }, new_state } = eval_quoted(receive_code, state)
+    { status, value, new_state }
   end
   def do_receive(state, after_time) do
     receive_code = quote do
       receive do
         value -> { :receive, value }
       after
-        unquote(after_time) -> :after
+        unquote(after_time) -> { :after, nil }
       end
     end
     
-    { result, _ } = eval_quoted(receive_code, state)
-    result 
+    { :ok, { status, value }, new_state } = eval_quoted(receive_code, state)
+    { status, value, new_state }
   end
 
-  def do_try(fun) do
-    try do
-      fun.()
-    rescue
-      exception -> 
-        { :rescue, exception }
-    end
-  end
- 
   def find_matching_clause(value, clauses, state) do 
     # generates `unquote(lhs) -> unquote(Macro.escape clause)`
     clause_list = Enum.map clauses, fn(clause) ->
@@ -67,7 +65,7 @@ defmodule Debugger.Evaluator do
     end
 
     # if no clause is matched return :nomatch
-    nil_clause = {[{:_, [], Elixir}], [], :nomatch}
+    nil_clause = { [{ :_, [], Elixir }], [], :nomatch }
     all_clauses = { :->, [], List.concat(clause_list, [nil_clause]) }
 
     match_clause_case = quote do
