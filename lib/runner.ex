@@ -150,7 +150,7 @@ defmodule Debugger.Runner do
     result = next(right)
 
     change_state fn(state) ->
-      { nil, Evaluator.initialize_clause_vars(clauses, state) }
+      Evaluator.initialize_clause_vars(clauses, state)
     end
 
     result
