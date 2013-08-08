@@ -91,7 +91,7 @@ defmodule Debugger.Runner do
   # otherwise returns result
   def if_status(status, result, fun) do
     case result do
-      { status, value } ->
+      { ^status, value } ->
         fun.(value)
       other ->
         other

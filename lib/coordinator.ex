@@ -25,10 +25,10 @@ defmodule Debugger.Coordinator do
   end
   
   def handle_cast(:pop_stack, state) do 
-    case state do
-      State[stack: []] ->
+    case state.stack do
+      [] ->
         { :noreply, state }
-      State[stack: [{ binding, scope } | rest]] ->
+      [{ binding, scope } | rest] ->
         { :noreply, State[binding: binding, scope: scope, stack: rest] }
     end
   end
