@@ -150,7 +150,7 @@ defmodule Debugger.Runner do
   def next({ :try, _, [[do: do_clause, rescue: rescue_clauses]] }) do
     case next(do_clause) do
       { :rescue, exception } ->
-        match_next(exception, rescue_clauses) 
+        rescue_next(exception, rescue_clauses) 
       { :ok, value } ->
         value
     end
@@ -194,7 +194,7 @@ defmodule Debugger.Runner do
   # the first clause matching the condition is found
   def match_next(value, { :-> , _, clauses }) do
     matching_clause = change_state fn(state) ->
-      Evaluator.find_matching_clause(value, clauses, state)
+      Evaluator.find_match_clause(value, clauses, state)
     end
     
     if_status :ok, matching_clause, fn({ _, _, right }) ->
@@ -205,6 +205,18 @@ defmodule Debugger.Runner do
       end
 
       result
+    end
+  end
+
+  # pattern matching operator should evaluate clauses until
+  # the first clause matching the condition is found
+  def rescue_next(exception, { :-> , _, clauses }) do
+    matching_clause = change_state fn(state) ->
+      Evaluator.find_rescue_clause(exception, clauses, state)
+    end
+    
+    if_status :ok, matching_clause, fn({ _, _, right }) ->
+      next(right)
     end
   end
 end

@@ -55,7 +55,7 @@ defmodule Debugger.Evaluator do
     { status, value, new_state }
   end
 
-  def find_matching_clause(value, clauses, state) do 
+  def find_match_clause(value, clauses, state) do 
     # generates `unquote(lhs) -> unquote(Macro.escape clause)`
     clause_list = Enum.map clauses, fn(clause) ->
       { left, _, _ } = clause
@@ -64,13 +64,31 @@ defmodule Debugger.Evaluator do
       { left, [], esc_clause }
     end
 
-    # if no clause is matched return :nomatch
-    nil_clause = { [{ :_, [], Elixir }], [], :nomatch }
-    all_clauses = { :->, [], List.concat(clause_list, [nil_clause]) }
-
+    clause_list = { :->, [], clause_list }
     match_clause_case = quote do
       case unquote(value) do
-        unquote(all_clauses)
+        unquote(clause_list)
+      end
+    end
+
+    eval_quoted(match_clause_case, state)
+  end
+
+  def find_rescue_clause(exception, clauses, state) do 
+    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
+    clause_list = Enum.map clauses, fn(clause) ->
+      { left, _, _ } = clause
+      esc_clause = Macro.escape clause
+
+      { left, [], esc_clause }
+    end
+
+    clause_list = { :->, [], clause_list }
+    match_clause_case = quote do
+      try do
+        raise unquote(exception)
+      rescue
+        unquote(clause_list)
       end
     end
 
