@@ -5,19 +5,22 @@ defmodule Debugger.Evaluator do
   # TODO: use scope on eval?
   def eval_quoted(expr, state, temp_vars//[]) do
     try do
-      # state.binding prevails
+      # add temp_vars to binding: state.binding prevails
       good_temp_vars = Enum.filter temp_vars, fn({ k, _ }) -> 
         state.binding[k] == nil 
       end
       eval_binding = Keyword.merge good_temp_vars, state.binding 
 
+      # eval
       { value, binding, scope } = :elixir.eval_quoted([expr], eval_binding)
 
+      # remove temp_vars from binding and scope
       new_binding = Enum.reduce good_temp_vars, binding, fn({ k, _ }, acc) ->
         Keyword.delete acc, k
       end
       new_scope = :elixir_scope.vars_from_binding(state.scope, new_binding)
 
+      # escape any pids
       { clean_value, new_state } = wrap_pid(value, state.binding(new_binding).scope(new_scope))
       { :ok, clean_value, new_state }
     catch
@@ -86,6 +89,19 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_case, state)
   end
 
+  def initialize_clause_vars(clauses, state) do
+    match_clause = { [:__initialize_clause_vars__], [], :ok }
+    all_clauses = { :->, [], [match_clause | clauses] }
+
+    match_clause_case = quote do
+      case :__initialize_clause_vars__ do
+        unquote(all_clauses)
+      end
+    end
+
+    eval_quoted(match_clause_case, state)
+  end
+
   def find_rescue_clause(exception, clauses, state) do 
     # generates `unquote(lhs) -> unquote(Macro.escape clause)`
     clause_list = Enum.map clauses, fn(clause) ->
@@ -108,16 +124,17 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_try, state, [__EXCEPTION__: exception])
   end
 
-  def initialize_clause_vars(clauses, state) do
-    match_clause = { [:__initialize_clause_vars__], [], :ok }
-    all_clauses = { :->, [], [match_clause | clauses] }
-
-    match_clause_case = quote do
-      case :__initialize_clause_vars__ do
-        unquote(all_clauses)
-      end
+  # binds names defined on a rescue clause
+  # TODO: this might have to take context into account
+  # TODO: write tests for this
+  def rescue_exception_alias(exception, clause, state) do
+    case clause do
+      { [{ :in, _, [var | _] }], _, _ } ->
+        { name, _, _ } = var
+        new_binding = Keyword.put state.binding, name, exception
+        { :ok, clause, state.binding(new_binding) }
+      other ->
+        { :ok, clause, state }
     end
-
-    eval_quoted(match_clause_case, state)
   end
 end

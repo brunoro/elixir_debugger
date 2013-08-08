@@ -40,6 +40,16 @@ defmodule Debugger.Runner do
     with_state &Evaluator.eval_quoted(expr, &1)
   end
 
+  # run fun on a state to be discarded
+  def do_and_discard_state(fun) do
+    coord = PIDTable.get(self)
+    Coordinator.push_stack(coord)
+    result = fun.()
+    Coordinator.pop_stack(coord)
+
+    result
+  end
+
   # expansions that lead to case-like expressions should be kept
   defp do_or_expand(expr, fun) do 
     expanded = with_state &Evaluator.expand(expr, &1)
@@ -54,8 +64,8 @@ defmodule Debugger.Runner do
 
   # maps fun |> filter over col while fun |> condition is true
   # otherwise returns fun(failing_element)
-  def map_filter_while(col, condition, filter, fun) do 
-    ret = do_map_filter_while(col, condition, filter, fun, [])
+  def filter_map_while(col, condition, filter, fun) do 
+    ret = do_filter_map_while(col, condition, filter, fun, [])
     case ret do
       list when is_list(list) ->
         Enum.reverse list
@@ -64,11 +74,11 @@ defmodule Debugger.Runner do
     end
   end
 
-  defp do_map_filter_while([], _con, _fil, _fun, acc), do: acc
-  defp do_map_filter_while([h | t], con, fil, fun, acc) do
+  defp do_filter_map_while([], _con, _fil, _fun, acc), do: acc
+  defp do_filter_map_while([h | t], con, fil, fun, acc) do
     fh = fun.(h)
     if con.(fh) do
-      do_map_filter_while(t, con, fil, fun, [fil.(fh) | acc])
+      do_filter_map_while(t, con, fil, fun, [fil.(fh) | acc])
     else
       fh
     end
@@ -77,7 +87,7 @@ defmodule Debugger.Runner do
   # maps next/1 while status returned is :ok, otherwise returns the
   # failing element of the list with its status
   def map_next_while_ok(expr_list) do
-    v = map_filter_while expr_list, &is_status_ok?(&1), &strip_status(&1), &next(&1)
+    v = filter_map_while expr_list, &is_status_ok?(&1), &strip_status(&1), &next(&1)
     case v do
       value_list when is_list(value_list) ->
         { :ok, value_list }
@@ -215,8 +225,15 @@ defmodule Debugger.Runner do
       Evaluator.find_rescue_clause(exception, clauses, state)
     end
     
-    if_status :ok, matching_clause, fn({ _, _, right }) ->
-      next(right)
+    do_and_discard_state fn ->
+      if_status :ok, matching_clause, fn(clause) ->
+        change_state fn(state) ->
+          Evaluator.rescue_exception_alias(exception, clause, state)
+        end
+
+        { _, _, right } = clause
+        next(right)
+      end
     end
   end
 end
