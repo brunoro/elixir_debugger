@@ -18,7 +18,7 @@ defmodule Debugger.Evaluator do
       new_binding = Enum.reduce good_temp_vars, binding, fn({ k, _ }, acc) ->
         Keyword.delete acc, k
       end
-      new_scope = :elixir_scope.vars_from_binding(state.scope, new_binding)
+      new_scope = :elixir_scope.vars_from_binding(scope, new_binding)
 
       # escape any pids
       { clean_value, new_state } = wrap_pid(value, state.binding(new_binding).scope(new_scope))
@@ -124,10 +124,32 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_try, state, [__EXCEPTION__: exception])
   end
 
+  def find_catch_clause(exception, clauses, state) do 
+    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
+    clause_list = Enum.map clauses, fn(clause) ->
+      { left, _, _ } = clause
+      esc_clause = Macro.escape clause
+
+      { left, [], esc_clause }
+    end
+
+    clause_list = { :->, [], clause_list }
+    exception_var = { :__EXCEPTION__, [], nil }
+    match_clause_try = quote do
+      try do
+        throw unquote(exception_var)
+      catch
+        unquote(clause_list)
+      end
+    end
+
+    eval_quoted(match_clause_try, state, [__EXCEPTION__: exception])
+  end
+
   # binds names defined on a rescue clause
   # TODO: this might have to take context into account
   # TODO: write tests for this
-  def rescue_exception_alias(exception, clause, state) do
+  def exception_alias(exception, clause, state) do
     case clause do
       { [{ :in, _, [var | _] }], _, _ } ->
         { name, _, _ } = var
