@@ -24,9 +24,8 @@ defmodule Debugger.Evaluator do
       { clean_value, new_state } = wrap_pid(value, state.binding(new_binding).scope(new_scope))
       { :ok, clean_value, new_state }
     catch
-      exception -> { :throw, exception }
-    rescue
-      exception -> { :raise, exception }
+      kind, reason -> 
+        { :exception, kind, reason, :erlang.get_stacktrace }
     end
   end
 
@@ -70,16 +69,10 @@ defmodule Debugger.Evaluator do
     { status, value, new_state }
   end
 
+  # generates `unquote(lhs) -> unquote(Macro.escape clause)`
   def find_match_clause(value, clauses, state) do 
-    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
-    clause_list = Enum.map clauses, fn(clause) ->
-      { left, _, _ } = clause
-      esc_clause = Macro.escape clause
+    clause_list = escape_clauses(clauses)
 
-      { left, [], esc_clause }
-    end
-
-    clause_list = { :->, [], clause_list }
     match_clause_case = quote do
       case unquote(value) do
         unquote(clause_list)
@@ -102,61 +95,33 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_case, state)
   end
 
-  def find_rescue_clause(exception, clauses, state) do 
-    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
-    clause_list = Enum.map clauses, fn(clause) ->
-      { left, _, _ } = clause
-      esc_clause = Macro.escape clause
+  def find_exception_clause(exception, rescue_clauses, catch_clauses, state) do 
+    rescue_clause_list = escape_clauses(rescue_clauses)
+    catch_clause_list = escape_clauses(catch_clauses)
 
-      { left, [], esc_clause }
-    end
-
-    clause_list = { :->, [], clause_list }
-    exception_var = { :__EXCEPTION__, [], nil }
+    { :exception, kind, reason, stacktrace } = exception
     match_clause_try = quote do
       try do
-        raise unquote(exception_var)
-      rescue
-        unquote(clause_list)
-      end
-    end
-
-    eval_quoted(match_clause_try, state, [__EXCEPTION__: exception])
-  end
-
-  def find_catch_clause(exception, clauses, state) do 
-    # generates `unquote(lhs) -> unquote(Macro.escape clause)`
-    clause_list = Enum.map clauses, fn(clause) ->
-      { left, _, _ } = clause
-      esc_clause = Macro.escape clause
-
-      { left, [], esc_clause }
-    end
-
-    clause_list = { :->, [], clause_list }
-    exception_var = { :__EXCEPTION__, [], nil }
-    match_clause_try = quote do
-      try do
-        throw unquote(exception_var)
+        :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+      rescue 
+        unquote(rescue_clause_list)
       catch
-        unquote(clause_list)
+        unquote(catch_clause_list)
       end
     end
 
-    eval_quoted(match_clause_try, state, [__EXCEPTION__: exception])
+    eval_quoted(match_clause_try, state)
   end
 
-  # binds names defined on a rescue clause
-  # TODO: this might have to take context into account
-  # TODO: write tests for this
-  def exception_alias(exception, clause, state) do
-    case clause do
-      { [{ :in, _, [var | _] }], _, _ } ->
-        { name, _, _ } = var
-        new_binding = Keyword.put state.binding, name, exception
-        { :ok, clause, state.binding(new_binding) }
-      other ->
-        { :ok, clause, state }
+  def escape_clauses(clauses) do
+   clause_list = Enum.map clauses, fn(clause) ->
+      { left, _, _ } = clause
+      esc_clause = Macro.escape clause
+
+      { left, [], esc_clause }
     end
-  end
+
+    { :->, [], clause_list }
+   end
+
 end

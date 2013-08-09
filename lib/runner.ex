@@ -10,12 +10,10 @@ defmodule Debugger.Runner do
     state = Coordinator.get_state(coord)
 
     case fun.(state) do
-      # ok, receive, after
+      { :exception, kind, reason, stacktrace } ->
+        { :exception, kind, reason, stacktrace }
       { status, result, new_state } ->
         Coordinator.put_state(coord, new_state)
-        { status, result }
-      # rescue, catch
-      { status, result } ->
         { status, result }
     end
   end
@@ -29,9 +27,9 @@ defmodule Debugger.Runner do
     state = Coordinator.get_state(coord)
 
     case fun.(state) do
+      { :exception, kind, reason, stacktrace } ->
+        { :exception, kind, reason, stacktrace }
       { status, result, _state } ->
-        { status, result }
-      { status, result } ->
         { status, result }
     end
   end
@@ -108,17 +106,16 @@ defmodule Debugger.Runner do
     end
   end
 
-  # Runner functions can return either 
-  # { status, result } or { status, result, state }
-  def is_status_ok?({ status, _ }), do: status == :ok
   def is_status_ok?({ status, _, _ }), do: status == :ok
+  def is_status_ok?({ status, _, _, _ }), do: status == :ok
 
   # removes status from a Runner return value
-  def strip_status({ _, a }), do: a
   def strip_status({ _, a, b }), do: { a, b }
 
-  # Makes nested next calls until leafs are reached.
+  ## next/1
+  # makes nested next calls until leafs are reached.
   # keeps the current scope and binding
+  # returns { :ok, value } or { :exception, kind, reason, stacktrace }
 
   # PID variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
@@ -161,27 +158,14 @@ defmodule Debugger.Runner do
     do_clause = clauses[:do]
 
     # variables defined on try block aren't accessible outside it
+    # TODO: this is wrong, as only bindings from try aren't kept
     do_result = do_and_discard_state fn ->
       next(do_clause)
     end
 
     case do_result do
-      { :raise, exception } ->
-        rescue_clauses = clauses[:rescue]
-        if rescue_clauses do
-          rescue_next(exception, rescue_clauses) 
-        else
-          { :raise, exception }
-        end
-
-      { :throw, exception } ->
-        catch_clauses = clauses[:catch]
-        if catch_clauses do
-          catch_next(exception, catch_clauses) 
-        else
-          { :throw, exception }
-        end
-
+      { :exception, exception } ->
+        exception_next(exception, clauses[:rescue], clauses[:catch])
       { :ok, _value } ->
         do_result
     end
@@ -239,34 +223,13 @@ defmodule Debugger.Runner do
     end
   end
 
-  def rescue_next(exception, { :-> , _, clauses }) do
+  def exception_next(exception, { :-> , _, rescue_clauses }, { :-> , _, catch_clauses }) do
     matching_clause = change_state fn(state) ->
-      Evaluator.find_rescue_clause(exception, clauses, state)
+      Evaluator.find_exception_clause(exception, rescue_clauses, catch_clauses, state)
     end
     
     do_and_discard_state fn ->
       if_status :ok, matching_clause, fn(clause) ->
-        change_state fn(state) ->
-          Evaluator.exception_alias(exception, clause, state)
-        end
-
-        { _, _, right } = clause
-        next(right)
-      end
-    end
-  end
-
-  def catch_next(exception, { :-> , _, clauses }) do
-    matching_clause = change_state fn(state) ->
-      Evaluator.find_catch_clause(exception, clauses, state)
-    end
-    
-    do_and_discard_state fn ->
-      if_status :ok, matching_clause, fn(clause) ->
-        change_state fn(state) ->
-          Evaluator.exception_alias(exception, clause, state)
-        end
-
         { _, _, right } = clause
         next(right)
       end
