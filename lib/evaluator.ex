@@ -24,9 +24,9 @@ defmodule Debugger.Evaluator do
       { clean_value, new_state } = wrap_pid(value, state.binding(new_binding).scope(new_scope))
       { :ok, clean_value, new_state }
     catch
-      exception -> { :catch, exception }
+      exception -> { :throw, exception }
     rescue
-      exception -> { :rescue, exception }
+      exception -> { :raise, exception }
     end
   end
 

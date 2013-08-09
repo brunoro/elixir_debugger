@@ -19,10 +19,18 @@ defmodule Debugger do
 
         ret = PIDTable.put(self, binding, scope)
 
-        { _status, return_value } = Runner.next(unquote(Macro.escape(body)))
+        { status, return_value } = Runner.next(unquote(Macro.escape(body)))
 
         PIDTable.delete(self)
-        return_value
+        
+        case status do
+          :ok ->
+            return_value
+          :raise ->
+            raise return_value
+          :throw ->
+            throw return_value
+        end
       end
     end
   end

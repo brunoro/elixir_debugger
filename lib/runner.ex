@@ -159,27 +159,31 @@ defmodule Debugger.Runner do
   # try
   def next({ :try, _, [clauses] }) do
     do_clause = clauses[:do]
-    IO.inspect clauses
 
-    case next(do_clause) do
-      { :rescue, exception } ->
+    # variables defined on try block aren't accessible outside it
+    do_result = do_and_discard_state fn ->
+      next(do_clause)
+    end
+
+    case do_result do
+      { :raise, exception } ->
         rescue_clauses = clauses[:rescue]
         if rescue_clauses do
           rescue_next(exception, rescue_clauses) 
         else
-          { :rescue, exception }
+          { :raise, exception }
         end
 
-      { :catch, exception } ->
+      { :throw, exception } ->
         catch_clauses = clauses[:catch]
         if catch_clauses do
           catch_next(exception, catch_clauses) 
         else
-          { :catch, exception }
+          { :throw, exception }
         end
 
-      { :ok, value } ->
-        value
+      { :ok, _value } ->
+        do_result
     end
   end
 
