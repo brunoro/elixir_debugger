@@ -26,10 +26,9 @@ defmodule Debugger do
         case status do
           :ok ->
             return_value
-          :raise ->
-            raise return_value
-          :throw ->
-            throw return_value
+          :exception ->
+            { :exception, kind, reason, stacktrace } = return_value
+            :erlang.raise(kind, reason, stacktrace)
         end
       end
     end

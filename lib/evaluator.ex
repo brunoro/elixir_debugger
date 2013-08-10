@@ -95,25 +95,52 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_case, state)
   end
 
-  def find_exception_clause(exception, rescue_clauses, catch_clauses, state) do 
-    rescue_clause_list = escape_clauses(rescue_clauses)
-    catch_clause_list = escape_clauses(catch_clauses)
-
+  def find_exception_clause(exception, rescue_block, catch_block, state) do 
     { :exception, kind, reason, stacktrace } = exception
-    match_clause_try = quote do
-      try do
-        :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
-      rescue 
-        unquote(rescue_clause_list)
-      catch
-        unquote(catch_clause_list)
-      end
+
+    match_clause_try = case { rescue_block, catch_block } do
+      { nil, nil } -> 
+        nil
+      { rescue_block, nil } when rescue_block != nil ->
+        rescue_clauses = escape_clauses(rescue_block)
+        quote do
+          try do
+            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+          rescue 
+            unquote(rescue_clauses)
+          end
+        end
+      { nil, catch_block } when catch_block != nil ->
+        catch_clauses = escape_clauses(catch_block)
+        quote do
+          try do
+            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+          catch
+            unquote(catch_clauses)
+          end
+        end
+      { rescue_block, catch_block } when rescue_block != nil  and catch_block != nil->
+        rescue_clauses = escape_clauses(rescue_block)
+        catch_clauses = escape_clauses(catch_block)
+        quote do
+          try do
+            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+          rescue 
+            unquote(rescue_clauses)
+          catch
+            unquote(catch_clauses)
+          end
+        end
     end
 
-    eval_quoted(match_clause_try, state)
+    if match_clause_try do
+      eval_quoted(match_clause_try, state)
+    else
+      exception
+    end
   end
 
-  def escape_clauses(clauses) do
+  def escape_clauses({ :->, meta, clauses }) do
    clause_list = Enum.map clauses, fn(clause) ->
       { left, _, _ } = clause
       esc_clause = Macro.escape clause
@@ -121,7 +148,7 @@ defmodule Debugger.Evaluator do
       { left, [], esc_clause }
     end
 
-    { :->, [], clause_list }
+    { :->, meta, clause_list }
    end
 
 end

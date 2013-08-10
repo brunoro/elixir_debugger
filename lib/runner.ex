@@ -26,10 +26,14 @@ defmodule Debugger.Runner do
     coord = PIDTable.get(self)
     state = Coordinator.get_state(coord)
 
-    case fun.(state) do
+    val = fun.(state)
+    #IO.inspect val
+    case val do
       { :exception, kind, reason, stacktrace } ->
         { :exception, kind, reason, stacktrace }
       { status, result, _state } ->
+        { status, result }
+      { status, result } ->
         { status, result }
     end
   end
@@ -106,10 +110,13 @@ defmodule Debugger.Runner do
     end
   end
 
+  def is_status_ok?({ status, _ }), do: status == :ok
   def is_status_ok?({ status, _, _ }), do: status == :ok
   def is_status_ok?({ status, _, _, _ }), do: status == :ok
 
+
   # removes status from a Runner return value
+  def strip_status({ _, a }), do: a
   def strip_status({ _, a, b }), do: { a, b }
 
   ## next/1
@@ -164,7 +171,8 @@ defmodule Debugger.Runner do
     end
 
     case do_result do
-      { :exception, exception } ->
+      { :exception, kind, reason, stacktrace } ->
+        exception = { :exception, kind, reason, stacktrace }
         exception_next(exception, clauses[:rescue], clauses[:catch])
       { :ok, _value } ->
         do_result
@@ -207,7 +215,7 @@ defmodule Debugger.Runner do
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
-  def match_next(value, { :-> , _, clauses }) do
+  def match_next(value, clauses) do
     matching_clause = change_state fn(state) ->
       Evaluator.find_match_clause(value, clauses, state)
     end
@@ -223,9 +231,9 @@ defmodule Debugger.Runner do
     end
   end
 
-  def exception_next(exception, { :-> , _, rescue_clauses }, { :-> , _, catch_clauses }) do
+  def exception_next(exception, rescue_block, catch_block) do
     matching_clause = change_state fn(state) ->
-      Evaluator.find_exception_clause(exception, rescue_clauses, catch_clauses, state)
+      Evaluator.find_exception_clause(exception, rescue_block, catch_block, state)
     end
     
     do_and_discard_state fn ->

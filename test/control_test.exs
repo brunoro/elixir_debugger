@@ -126,7 +126,7 @@ defmodule ControlTest do
     assert 1 == try_f2
   end
 
-  # rescue only runtime error
+  # rescue only runtime errors
   defdebug try_rescue_f1 do
     try do
       raise "some error"
