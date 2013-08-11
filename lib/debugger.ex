@@ -19,15 +19,14 @@ defmodule Debugger do
 
         ret = PIDTable.put(self, binding, scope)
 
-        { status, return_value } = Runner.next(unquote(Macro.escape(body)))
+        result = Runner.next(unquote(Macro.escape(body)))
 
         PIDTable.delete(self)
         
-        case status do
-          :ok ->
-            return_value
-          :exception ->
-            { :exception, kind, reason, stacktrace } = return_value
+        case result do
+          { :ok, value } ->
+            value
+          { :exception, kind, reason, stacktrace } ->
             :erlang.raise(kind, reason, stacktrace)
         end
       end
