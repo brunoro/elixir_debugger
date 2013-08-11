@@ -119,7 +119,7 @@ defmodule Debugger.Evaluator do
             unquote(catch_clauses)
           end
         end
-      { rescue_block, catch_block } when rescue_block != nil  and catch_block != nil->
+      { rescue_block, catch_block } when rescue_block != nil and catch_block != nil ->
         rescue_clauses = escape_clauses(rescue_block)
         catch_clauses = escape_clauses(catch_block)
         quote do

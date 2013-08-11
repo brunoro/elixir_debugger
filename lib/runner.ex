@@ -174,8 +174,12 @@ defmodule Debugger.Runner do
       { :exception, kind, reason, stacktrace } ->
         exception = { :exception, kind, reason, stacktrace }
         exception_next(exception, clauses[:rescue], clauses[:catch])
-      { :ok, _value } ->
-        do_result
+      { :ok, value } ->
+        if clauses[:else] do
+          match_next(value, clauses[:else])
+        else
+          do_result
+        end
     end
   end
 
