@@ -82,7 +82,7 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_case, state)
   end
 
-  def initialize_clause_vars(clauses, state) do
+  def initialize_clause_vars({ :->, _meta, clauses }, state) do
     match_clause = { [:__initialize_clause_vars__], [], :ok }
     all_clauses = { :->, [], [match_clause | clauses] }
 
