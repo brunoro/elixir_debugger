@@ -97,6 +97,7 @@ defmodule Debugger.Evaluator do
 
   def find_exception_clause(exception, rescue_block, catch_block, state) do 
     { :exception, kind, reason, stacktrace } = exception
+    esc_stacktrace = Macro.escape stacktrace
 
     match_clause_try = case { rescue_block, catch_block } do
       { nil, nil } -> 
@@ -105,7 +106,7 @@ defmodule Debugger.Evaluator do
         rescue_clauses = escape_clauses(rescue_block)
         quote do
           try do
-            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+            :erlang.raise(unquote(kind), unquote(reason), unquote(esc_stacktrace))
           rescue 
             unquote(rescue_clauses)
           end
@@ -114,7 +115,7 @@ defmodule Debugger.Evaluator do
         catch_clauses = escape_clauses(catch_block)
         quote do
           try do
-            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+            :erlang.raise(unquote(kind), unquote(reason), unquote(esc_stacktrace))
           catch
             unquote(catch_clauses)
           end
@@ -124,7 +125,7 @@ defmodule Debugger.Evaluator do
         catch_clauses = escape_clauses(catch_block)
         quote do
           try do
-            :erlang.raise(unquote(kind), unquote(reason), unquote(stacktrace))
+            :erlang.raise(unquote(kind), unquote(reason), unquote(esc_stacktrace))
           rescue 
             unquote(rescue_clauses)
           catch
