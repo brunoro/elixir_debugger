@@ -19,6 +19,11 @@ defmodule Debugger.PIDTable do
   def handle_call({ :start, pid, binding, scope }, _sender, dict) do
     entry = case dict[pid] do
       { coord, count } ->
+        # create new context
+        Coordinator.push_stack(coord)
+        state = Coordinator.get_state(coord)
+        Coordinator.put_state(coord, state.binding(binding).scope(scope))
+
         { coord, count + 1 }
       nil ->
         { :ok, coord } = Coordinator.start_link(binding, scope)
@@ -35,6 +40,8 @@ defmodule Debugger.PIDTable do
         Coordinator.done(coord)
         Dict.delete(dict, pid)
       { coord, count } ->
+        # exit context
+        Coordinator.pop_stack(coord)
         Dict.put(dict, pid, { coord, count - 1 })
     end
 

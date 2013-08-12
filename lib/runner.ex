@@ -134,6 +134,12 @@ defmodule Debugger.Runner do
     end
   end
 
+  # anonymous functions
+  def next({ :fn, meta, body }) do
+    # TODO: inject PIDTable.start/finish calls
+    { :ok, { :fn, meta, body }}
+  end
+  
   # case
   def next({ :case, _, [condition | [[do: clauses]]] }) do
     { :ok, condition_value } = next(condition)

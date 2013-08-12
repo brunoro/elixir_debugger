@@ -1,6 +1,5 @@
 defmodule Debugger do
   alias Debugger.Runner
-  alias Debugger.Coordinator
   alias Debugger.PIDTable
 
   defmacro defdebug(header, do: body) do
