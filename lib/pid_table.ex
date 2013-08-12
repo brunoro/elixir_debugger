@@ -11,21 +11,37 @@ defmodule Debugger.PIDTable do
   end
  
   def handle_call({ :get, pid }, _sender, dict) do
-    { :reply, dict[pid], dict }
+    { coord, _count } = dict[pid]
+    { :reply, coord, dict }
   end
 
-  def handle_call({ :put, pid, binding, scope }, _sender, dict) do
-    { :ok, coordinator } = Coordinator.start_link(binding, scope)
-    { :reply, coordinator, Dict.put(dict, pid, coordinator) }
+  # before function calls
+  def handle_call({ :start, pid, binding, scope }, _sender, dict) do
+    entry = case dict[pid] do
+      { coord, count } ->
+        { coord, count + 1 }
+      nil ->
+        { :ok, coord } = Coordinator.start_link(binding, scope)
+        { coord, 0 }
+    end
+
+    { :reply, coord, Dict.put(dict, pid, entry) }
   end
  
-  def handle_cast({ :delete, pid }, dict) do
-    coord = dict[pid]
-    if coord, do: Coordinator.done(coord)
-    { :noreply, Dict.delete(dict, pid) }
+  # after function calls
+  def handle_cast({ :finish, pid }, dict) do
+    new_dict = case dict[pid] do
+      { coord, 1 } -> 
+        Coordinator.done(coord)
+        Dict.delete(dict, pid)
+      { coord, count } ->
+        Dict.put(dict, pid, { coord, count - 1 })
+    end
+
+    { :noreply, new_dict }
   end
 
-  def get(pid),                 do: :gen_server.call(:pid_table, { :get, pid })
-  def put(pid, binding, scope), do: :gen_server.call(:pid_table, { :put, pid, binding, scope })
-  def delete(pid),              do: :gen_server.cast(:pid_table, { :delete, pid })
+  def get(pid),                   do: :gen_server.call(:pid_table, { :get, pid })
+  def start(pid, binding, scope), do: :gen_server.call(:pid_table, { :start, pid, binding, scope })
+  def finish(pid),                do: :gen_server.cast(:pid_table, { :finish, pid })
 end

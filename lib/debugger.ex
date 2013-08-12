@@ -12,16 +12,16 @@ defmodule Debugger do
 
     quote do
       def unquote(header) do
+        # TODO: only one PIDTable instance is running
         PIDTable.start_link
 
         binding = unquote(vars)
         scope = :elixir_scope.to_erl_env(__ENV__)
-
-        ret = PIDTable.put(self, binding, scope)
+        PIDTable.start(self, binding, scope)
 
         result = Runner.next(unquote(Macro.escape(body)))
 
-        PIDTable.delete(self)
+        PIDTable.finish(self)
         
         case result do
           { :ok, value } ->
