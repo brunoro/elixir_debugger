@@ -26,9 +26,7 @@ defmodule Debugger.Runner do
     coord = PIDTable.get(self)
     state = Coordinator.get_state(coord)
 
-    val = fun.(state)
-    #IO.inspect val
-    case val do
+    case fun.(state) do
       { :exception, kind, reason, stacktrace } ->
         { :exception, kind, reason, stacktrace }
       { status, result, _state } ->
