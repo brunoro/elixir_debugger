@@ -100,40 +100,14 @@ defmodule Debugger.Evaluator do
     esc_stacktrace = Macro.escape stacktrace
     esc_reason = Macro.escape reason
 
-    match_clause_try = case { rescue_block, catch_block } do
-      { nil, nil } -> 
-        nil
-      { rescue_block, nil } when rescue_block != nil ->
-        rescue_clauses = escape_clauses(rescue_block)
-        quote do
-          try do
-            :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
-          rescue 
-            unquote(rescue_clauses)
-          end
-        end
-      { nil, catch_block } when catch_block != nil ->
-        catch_clauses = escape_clauses(catch_block)
-        quote do
-          try do
-            :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
-          catch
-            unquote(catch_clauses)
-          end
-        end
-      { rescue_block, catch_block } when rescue_block != nil and catch_block != nil ->
-        rescue_clauses = escape_clauses(rescue_block)
-        catch_clauses = escape_clauses(catch_block)
-        quote do
-          try do
-            :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
-          rescue 
-            unquote(rescue_clauses)
-          catch
-            unquote(catch_clauses)
-          end
-        end
-    end
+    clauses = [do: quote do
+      :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
+    end]
+
+    if rescue_block, do: clauses = Keyword.put clauses, :rescue, escape_clauses(rescue_block)
+    if catch_block, do: clauses = Keyword.put clauses, :catch, escape_clauses(catch_block)
+
+    match_clause_try = {:try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
 
     if match_clause_try do
       eval_quoted(match_clause_try, state)
