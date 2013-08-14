@@ -3,25 +3,12 @@ defmodule Debugger.Evaluator do
 
   # how to evaluate expressions 
   # TODO: use scope on eval?
-  def eval_quoted(expr, state, temp_vars//[]) do
+  def eval_quoted(expr, state) do
     try do
-      # add temp_vars to binding: state.binding prevails
-      good_temp_vars = Enum.filter temp_vars, fn({ k, _ }) -> 
-        state.binding[k] == nil 
-      end
-      eval_binding = Keyword.merge good_temp_vars, state.binding 
-
-      # eval
-      { value, binding, scope } = :elixir.eval_quoted([expr], eval_binding)
-
-      # remove temp_vars from binding and scope
-      new_binding = Enum.reduce good_temp_vars, binding, fn({ k, _ }, acc) ->
-        Keyword.delete acc, k
-      end
-      new_scope = :elixir_scope.vars_from_binding(scope, new_binding)
+      { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
 
       # escape any pids
-      { clean_value, new_state } = wrap_pid(value, state.binding(new_binding).scope(new_scope))
+      { clean_value, new_state } = wrap_pid(value, state.binding(binding).scope(scope))
       { :ok, clean_value, new_state }
     catch
       kind, reason -> 
@@ -95,27 +82,6 @@ defmodule Debugger.Evaluator do
     eval_quoted(match_clause_case, state)
   end
 
-  def find_exception_clause(exception, rescue_block, catch_block, state) do 
-    { :exception, kind, reason, stacktrace } = exception
-    esc_stacktrace = Macro.escape stacktrace
-    esc_reason = Macro.escape reason
-
-    clauses = [do: quote do
-      :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
-    end]
-
-    if rescue_block, do: clauses = Keyword.put clauses, :rescue, escape_clauses(rescue_block)
-    if catch_block, do: clauses = Keyword.put clauses, :catch, escape_clauses(catch_block)
-
-    match_clause_try = {:try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
-
-    if match_clause_try do
-      eval_quoted(match_clause_try, state)
-    else
-      exception
-    end
-  end
-
   def escape_clauses({ :->, meta, clauses }) do
    clause_list = Enum.map clauses, fn(clause) ->
       { left, _, _ } = clause
@@ -126,5 +92,4 @@ defmodule Debugger.Evaluator do
 
     { :->, meta, clause_list }
    end
-
 end

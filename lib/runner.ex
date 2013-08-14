@@ -240,16 +240,42 @@ defmodule Debugger.Runner do
   end
 
   def exception_next(exception, rescue_block, catch_block) do
-    matching_clause = change_state fn(state) ->
-      Evaluator.find_exception_clause(exception, rescue_block, catch_block, state)
-    end
-    
-    do_and_discard_state fn ->
-      if_status :ok, matching_clause, fn(clause) ->
-        { _, _, right } = clause
-        next(right)
+    { :exception, kind, reason, stacktrace } = exception
+    esc_stacktrace = Macro.escape stacktrace
+    esc_reason = Macro.escape reason
+
+    clauses = [do: quote do
+      :erlang.raise(unquote(kind), unquote(esc_reason), unquote(esc_stacktrace))
+    end]
+
+    if rescue_block, do: clauses = 
+      Keyword.put clauses, :rescue, prepare_exception(rescue_block)
+    if catch_block, do: clauses = 
+      Keyword.put clauses, :catch, prepare_exception(catch_block)
+
+    try_expr = {:try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
+
+    if try_expr do
+      with_state fn(state) ->
+        result = Evaluator.eval_quoted(try_expr, state)
+        { :ok, value, _ } = result
+        value
       end
+    else
+      exception
     end
   end
 
+  def prepare_exception({ :->, meta, clauses }) do
+    inject_clauses = Enum.map clauses, fn({ left, clause_meta, right }) ->
+      { left, clause_meta, prepare_exception(right) }
+    end
+    { :->, meta, inject_clauses }
+  end
+  def prepare_exception(expr) do
+    esc_expr = Macro.escape expr
+    quote do
+      Debugger.Runner.next(unquote(esc_expr))
+    end
+  end
 end
