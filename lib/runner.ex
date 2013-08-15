@@ -136,12 +136,14 @@ defmodule Debugger.Runner do
   end
 
   # anonymous functions
-  # TODO: manage context changing and variable capture
+  # TODO: manage context changing 
   def next { :fn, meta, [[do: body]] } do
-    #IO.inspect { :fn, meta, [[do: body]] }
-    { :->, fn_arrow_meta, [{ params, fn_meta, exprs }]} = body
-    next_exprs = wrap_next_call(exprs)
-    next_body = { :->, fn_arrow_meta, [{ params, fn_meta, next_exprs }]}
+    { :->, arrow_meta, clauses } = body
+    next_clauses = Enum.map clauses, fn({ params, clause_meta, clause_body }) ->
+      { params, clause_meta, wrap_next_call(clause_body) }
+    end
+
+    next_body = { :->, arrow_meta, next_clauses }
     { :ok, { :fn, meta, [[do: next_body]] }}
   end
 
