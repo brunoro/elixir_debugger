@@ -6,9 +6,10 @@ defmodule Debugger.Evaluator do
   def eval_quoted(expr, state) do
     try do
       { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
+      new_scope = :elixir_scope.vars_from_binding(scope, binding)
 
       # escape any pids
-      { clean_value, new_state } = wrap_pid(value, state.binding(binding).scope(scope))
+      { clean_value, new_state } = wrap_pid(value, state.binding(binding).scope(new_scope))
       { :ok, clean_value, new_state }
     catch
       kind, reason -> 

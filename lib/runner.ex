@@ -253,13 +253,15 @@ defmodule Debugger.Runner do
     if catch_block, do: clauses = 
       Keyword.put clauses, :catch, prepare_exception(catch_block)
 
-    try_expr = {:try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
+    try_expr = { :try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
 
     if try_expr do
-      with_state fn(state) ->
-        result = Evaluator.eval_quoted(try_expr, state)
-        { :ok, value, _ } = result
-        value
+      do_and_discard_state fn ->
+        with_state fn(state) ->
+          result = Evaluator.eval_quoted(try_expr, state)
+          { :ok, value, _ } = result
+          value
+        end
       end
     else
       exception
@@ -274,7 +276,18 @@ defmodule Debugger.Runner do
   end
   def prepare_exception(expr) do
     esc_expr = Macro.escape expr
+
     quote do
+      # TODO: are we using the proper scope?
+      # put the current binding there
+      coord = PIDTable.get(self)
+      state = Coordinator.get_state(coord)
+
+      binding = Keyword.merge(state.binding, Kernel.binding)
+      scope = :elixir_scope.vars_from_binding(state.scope, binding)
+      new_state = state.binding(binding).scope(scope)
+      Coordinator.put_state(coord, new_state)
+      
       Debugger.Runner.next(unquote(esc_expr))
     end
   end
