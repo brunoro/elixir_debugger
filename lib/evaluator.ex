@@ -1,5 +1,5 @@
 defmodule Debugger.Evaluator do
-  alias Debugger.PIDName
+  import Debugger.Escape
 
   # how to evaluate expressions 
   # TODO: use scope on eval?
@@ -8,8 +8,9 @@ defmodule Debugger.Evaluator do
       { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
       new_scope = :elixir_scope.vars_from_binding(scope, binding)
 
-      # escape any pids
-      { clean_value, new_state } = wrap_pid(value, state.binding(binding).scope(new_scope))
+      # escape values
+      { clean_value, new_state } = 
+        escape_and_bind(value, state.binding(binding).scope(new_scope))
       { :ok, clean_value, new_state }
     catch
       kind, reason -> 
@@ -17,15 +18,15 @@ defmodule Debugger.Evaluator do
     end
   end
 
-  # add pids to binding with some name mangling
-  # NO PIDS SHALL PASS!!
-  def wrap_pid(pid, state) when is_pid(pid) do 
-    var = pid |> PIDName.to_pid_name |> binary_to_atom
-    new_binding = Keyword.put(state.binding, var, pid)
+  # add functions and pids to binding with some name mangling
+  def escape_and_bind(thing, state) when is_pid(thing) or is_function(thing) do 
+    var = thing |> escape |> binary_to_atom
+    new_binding = Keyword.put(state.binding, var, thing)
+    new_scope = :elixir_scope.vars_from_binding(state.scope, new_binding)
 
-    {{ var, [], nil }, state.binding(new_binding) }
+    {{ var, [], nil }, state.binding(new_binding).scope(new_scope) }
   end
-  def wrap_pid(value, state), do: { value, state }
+  def escape_and_bind(value, state), do: { value, state }
 
   # interface functions
   def expand(expr, state) do

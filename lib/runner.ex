@@ -1,8 +1,9 @@
 defmodule Debugger.Runner do
   alias Debugger.Coordinator
   alias Debugger.Evaluator
-  alias Debugger.PIDName
   alias Debugger.PIDTable
+  
+  import Debugger.Escape
 
   # functions manipulating state coming from Coordinator
   def change_state(fun) do
@@ -122,11 +123,11 @@ defmodule Debugger.Runner do
   # keeps the current scope and binding
   # returns { :ok, value } or { :exception, kind, reason, stacktrace }
 
-  # PID variables sholdn't be next'd
+  # PID and function variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
   def next({ var, meta, mod }) when is_atom(var) and is_atom(mod) do
     expr = { var, meta, mod }
-    case PIDName.is_pid_name?(atom_to_binary(var)) do
+    case is_escaped?(atom_to_binary(var)) do
       true ->
         { :ok, expr }
       _ ->
@@ -135,11 +136,15 @@ defmodule Debugger.Runner do
   end
 
   # anonymous functions
-  def next({ :fn, meta, body }) do
-    # TODO: inject PIDTable.start/finish calls
-    { :ok, { :fn, meta, body }}
+  # TODO: manage context changing and variable capture
+  def next { :fn, meta, [[do: body]] } do
+    #IO.inspect { :fn, meta, [[do: body]] }
+    { :->, fn_arrow_meta, [{ params, fn_meta, exprs }]} = body
+    next_exprs = wrap_next_call(exprs)
+    next_body = { :->, fn_arrow_meta, [{ params, fn_meta, next_exprs }]}
+    { :ok, { :fn, meta, [[do: next_body]] }}
   end
-  
+
   # case
   def next({ :case, _, [condition | [[do: clauses]]] }) do
     { :ok, condition_value } = next(condition)
@@ -249,9 +254,9 @@ defmodule Debugger.Runner do
     end]
 
     if rescue_block, do: clauses = 
-      Keyword.put clauses, :rescue, prepare_exception(rescue_block)
+      Keyword.put clauses, :rescue, wrap_next_call(rescue_block)
     if catch_block, do: clauses = 
-      Keyword.put clauses, :catch, prepare_exception(catch_block)
+      Keyword.put clauses, :catch, wrap_next_call(catch_block)
 
     try_expr = { :try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
 
@@ -268,13 +273,13 @@ defmodule Debugger.Runner do
     end
   end
 
-  def prepare_exception({ :->, meta, clauses }) do
-    inject_clauses = Enum.map clauses, fn({ left, clause_meta, right }) ->
-      { left, clause_meta, prepare_exception(right) }
+  def wrap_next_call({ :->, meta, clauses }) do
+    wrap_clauses = Enum.map clauses, fn({ left, clause_meta, right }) ->
+      { left, clause_meta, wrap_next_call(right) }
     end
-    { :->, meta, inject_clauses }
+    { :->, meta, wrap_clauses }
   end
-  def prepare_exception(expr) do
+  def wrap_next_call(expr) do
     esc_expr = Macro.escape expr
 
     quote do
