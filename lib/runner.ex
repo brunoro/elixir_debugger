@@ -138,13 +138,8 @@ defmodule Debugger.Runner do
   # anonymous functions
   # TODO: manage context changing 
   def next { :fn, meta, [[do: body]] } do
-    { :->, arrow_meta, clauses } = body
-    next_clauses = Enum.map clauses, fn({ params, clause_meta, clause_body }) ->
-      { params, clause_meta, wrap_next_call(clause_body) }
-    end
-
-    next_body = { :->, arrow_meta, next_clauses }
-    { :ok, { :fn, meta, [[do: next_body]] }}
+    next_body = wrap_next_call(body)
+    { :ok, { :fn, meta, [[do: body]] }}
   end
 
   # case
