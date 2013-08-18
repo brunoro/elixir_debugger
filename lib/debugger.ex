@@ -11,7 +11,6 @@ defmodule Debugger do
 
     quote do
       def unquote(header) do
-        # TODO: only one PIDTable instance is running
         PIDTable.start_link
 
         binding = unquote(vars)

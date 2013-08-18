@@ -2,6 +2,7 @@ defmodule Debugger.Runner do
   alias Debugger.Coordinator
   alias Debugger.Evaluator
   alias Debugger.PIDTable
+  alias Debugger.Runner
   
   import Debugger.Escape
 
@@ -282,20 +283,23 @@ defmodule Debugger.Runner do
     quote do
       # TODO: are we using the proper scope?
       # put the current binding there
-      coord = PIDTable.get(self)
-      if coord do
-        state = Coordinator.get_state(coord)
-        binding = Keyword.merge(state.binding, Kernel.binding)
-        scope = :elixir_scope.vars_from_binding(state.scope, binding)
-      else
-        binding = Kernel.binding
-        scope = __ENV__
+      PIDTable.start_link
+
+      case PIDTable.get(self) do
+        nil ->
+          binding = Kernel.binding
+          scope = __ENV__
+        coord ->
+          state = Coordinator.get_state(coord)
+          binding = Keyword.merge(state.binding, Kernel.binding)
+          scope = :elixir_scope.vars_from_binding(state.scope, binding)
       end
       
       PIDTable.start(self, binding, scope)
-      result = Debugger.Runner.next(unquote(esc_expr))
+      return = Runner.next(unquote(esc_expr))
       PIDTable.finish(self)
-      result
+
+      return
     end
   end
 end
