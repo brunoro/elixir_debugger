@@ -139,7 +139,7 @@ defmodule Debugger.Runner do
   # TODO: manage context changing 
   def next { :fn, meta, [[do: body]] } do
     next_body = wrap_next_call(body)
-    { :ok, { :fn, meta, [[do: body]] }}
+    { :ok, { :fn, meta, [[do: next_body]] }}
   end
 
   # case
@@ -283,14 +283,19 @@ defmodule Debugger.Runner do
       # TODO: are we using the proper scope?
       # put the current binding there
       coord = PIDTable.get(self)
-      state = Coordinator.get_state(coord)
-
-      binding = Keyword.merge(state.binding, Kernel.binding)
-      scope = :elixir_scope.vars_from_binding(state.scope, binding)
-      new_state = state.binding(binding).scope(scope)
-      Coordinator.put_state(coord, new_state)
+      if coord do
+        state = Coordinator.get_state(coord)
+        binding = Keyword.merge(state.binding, Kernel.binding)
+        scope = :elixir_scope.vars_from_binding(state.scope, binding)
+      else
+        binding = Kernel.binding
+        scope = __ENV__
+      end
       
-      Debugger.Runner.next(unquote(esc_expr))
+      PIDTable.start(self, binding, scope)
+      result = Debugger.Runner.next(unquote(esc_expr))
+      PIDTable.finish(self)
+      result
     end
   end
 end

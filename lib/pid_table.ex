@@ -11,8 +11,12 @@ defmodule Debugger.PIDTable do
   end
  
   def handle_call({ :get, pid }, _sender, dict) do
-    { coord, _count } = dict[pid]
-    { :reply, coord, dict }
+    case dict[pid] do
+      { coord, _count } ->
+        { :reply, coord, dict }
+      nil ->
+        { :reply, nil, dict }
+    end
   end
 
   # before function calls
@@ -36,7 +40,7 @@ defmodule Debugger.PIDTable do
   # after function calls
   def handle_cast({ :finish, pid }, dict) do
     new_dict = case dict[pid] do
-      { coord, 1 } -> 
+      { coord, 0 } -> 
         Coordinator.done(coord)
         Dict.delete(dict, pid)
       { coord, count } ->
