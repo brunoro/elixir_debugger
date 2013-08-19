@@ -261,9 +261,7 @@ defmodule Debugger.Runner do
     if try_expr do
       do_and_discard_state fn ->
         with_state fn(state) ->
-          result = Evaluator.eval_quoted(try_expr, state)
-          { :ok, value, _ } = result
-          value
+          Evaluator.eval_quoted(try_expr, state)
         end
       end
     else
@@ -299,7 +297,11 @@ defmodule Debugger.Runner do
       return = Runner.next(unquote(esc_expr))
       PIDTable.finish(self)
 
-      return
+      if Runner.is_status_ok? return do
+        Runner.strip_status return
+      else
+        return
+      end
     end
   end
 end

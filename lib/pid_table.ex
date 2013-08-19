@@ -2,10 +2,10 @@ defmodule Debugger.PIDTable do
   use GenServer.Behaviour
   alias Debugger.Coordinator
 
-  @singleton_ref { :global, :pid_table }
+  @server_name { :global, :pid_table }
 
   def start_link do
-    :gen_server.start_link(@singleton_ref, __MODULE__, [], [])
+    :gen_server.start_link(@server_name, __MODULE__, [], [])
   end
 
   def init do
@@ -54,7 +54,7 @@ defmodule Debugger.PIDTable do
     { :noreply, new_dict }
   end
 
-  def get(pid),                   do: :gen_server.call(@singleton_ref, { :get, pid })
-  def start(pid, binding, scope), do: :gen_server.call(@singleton_ref, { :start, pid, binding, scope })
-  def finish(pid),                do: :gen_server.cast(@singleton_ref, { :finish, pid })
+  def get(pid),                   do: :gen_server.call(@server_name, { :get, pid })
+  def start(pid, binding, scope), do: :gen_server.call(@server_name, { :start, pid, binding, scope })
+  def finish(pid),                do: :gen_server.cast(@server_name, { :finish, pid })
 end
