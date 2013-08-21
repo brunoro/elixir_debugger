@@ -5,7 +5,15 @@ defmodule Debugger.Coordinator do
 
   # public interface
   def start_link(binding, scope) do
-      :gen_server.start_link(__MODULE__, State[binding: binding, scope: scope], [])
+    IO.puts "PIDTable #{inspect self}: before Coordinator.start_link"
+    try do
+      result = :gen_server.start_link(__MODULE__, State[binding: binding, scope: scope], [])
+      IO.puts "PIDTable #{inspect self}: after Coordinator.start_link"
+      result
+    catch
+      kind, reason ->
+        IO.puts "PIDTable #{inspect self}: catch Coordinator.start_link #{inspect kind} #{inspect reason}"
+    end
   end
 
   # gen_server methods

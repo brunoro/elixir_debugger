@@ -3,6 +3,7 @@ defmodule Debugger.Supervisor do
   use Supervisor.Behaviour
 
   def start_link do
+    IO.puts "Debugger #{inspect self}: Supervisor.start_link"
     :supervisor.start_link(__MODULE__, [])
   end
 
