@@ -14,6 +14,10 @@ defmodule Debugger.Evaluator do
       { :ok, clean_value, new_state }
     catch
       kind, reason -> 
+      #  IO.inspect kind
+      #  IO.inspect reason
+      #  IO.inspect expr
+      #  IO.puts Macro.to_string expr
         { :exception, kind, reason, :erlang.get_stacktrace }
     end
   end
@@ -25,6 +29,26 @@ defmodule Debugger.Evaluator do
     new_scope = :elixir_scope.vars_from_binding(state.scope, new_binding)
 
     {{ var, [], nil }, state.binding(new_binding).scope(new_scope) }
+  end
+  # star trek: deep escape 9
+  def escape_and_bind(list, state) when is_list(list) do
+    { l, s } = Enum.reduce list, { [], state }, fn(expr, { acc, old_state }) ->
+      { esc, new_state } = escape_and_bind(expr, old_state)
+      { [esc | acc], new_state }
+    end
+    { Enum.reverse(l), s }
+  end
+  def escape_and_bind(tuple, state) when is_tuple(tuple) do
+    list = tuple_to_list(tuple)
+    { esc_list, new_state } = escape_and_bind(list, state)
+    esc_tuple = case list_to_tuple(esc_list) do
+      # triples are evil
+      { a, b, c } ->
+        Macro.escape { a, b, c }
+      other ->
+        other
+    end
+    { esc_tuple, new_state }
   end
   def escape_and_bind(value, state), do: { value, state }
 

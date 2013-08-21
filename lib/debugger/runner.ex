@@ -286,7 +286,7 @@ defmodule Debugger.Runner do
       case PIDTable.get(self) do
         nil ->
           binding = Kernel.binding
-          scope = __ENV__
+          scope = :elixir_scope.to_erl_env(__ENV__)
         coord ->
           state = Coordinator.get_state(coord)
           binding = Keyword.merge(state.binding, Kernel.binding)
