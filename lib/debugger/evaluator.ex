@@ -41,13 +41,7 @@ defmodule Debugger.Evaluator do
   def escape_and_bind(tuple, state) when is_tuple(tuple) do
     list = tuple_to_list(tuple)
     { esc_list, new_state } = escape_and_bind(list, state)
-    esc_tuple = case list_to_tuple(esc_list) do
-      # triples are evil
-      { a, b, c } ->
-        Macro.escape { a, b, c }
-      other ->
-        other
-    end
+    esc_tuple = list_to_tuple(esc_list)
     { esc_tuple, new_state }
   end
   def escape_and_bind(value, state), do: { value, state }
