@@ -18,8 +18,6 @@ defmodule Debugger do
 
     quote do
       def unquote(header) do
-        PIDTable.start_link
-
         binding = unquote(vars)
         scope = :elixir_scope.to_erl_env(__ENV__)
         PIDTable.start(self, binding, scope)

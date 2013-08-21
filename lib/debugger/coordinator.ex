@@ -5,7 +5,7 @@ defmodule Debugger.Coordinator do
 
   # public interface
   def start_link(binding, scope) do
-    :gen_server.start_link(__MODULE__, State[binding: binding, scope: scope], [])
+      :gen_server.start_link(__MODULE__, State[binding: binding, scope: scope], [])
   end
 
   # gen_server methods
