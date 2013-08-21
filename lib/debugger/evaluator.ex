@@ -14,10 +14,6 @@ defmodule Debugger.Evaluator do
       { :ok, clean_value, new_state }
     catch
       kind, reason -> 
-      #  IO.inspect kind
-      #  IO.inspect reason
-      #  IO.inspect expr
-      #  IO.puts Macro.to_string expr
         { :exception, kind, reason, :erlang.get_stacktrace }
     end
   end

@@ -5,7 +5,6 @@ defmodule Debugger.PIDTable do
   @server_name { :global, :pid_table }
 
   def start_link do
-    IO.puts "Supervisor #{inspect self}: PIDTable.start_link"
     :gen_server.start_link(@server_name, __MODULE__, [], [])
   end
 
@@ -14,7 +13,6 @@ defmodule Debugger.PIDTable do
   end
 
   def handle_call({ :get, pid }, _sender, dict) do
-    IO.puts "PIDTable #{inspect self}: get(#{Dict.size dict}) #{inspect pid} #{inspect dict[pid] != nil}"
     case dict[pid] do
       { coord, _count } ->
         { :reply, coord, dict }
@@ -25,7 +23,6 @@ defmodule Debugger.PIDTable do
 
   # before function calls
   def handle_call({ :start, pid, binding, scope }, _sender, dict) do
-    IO.puts "PIDTable #{inspect self}: start(#{Dict.size dict}) #{inspect pid}"
     entry = case dict[pid] do
       { coord, count } ->
         # create new context
@@ -44,7 +41,6 @@ defmodule Debugger.PIDTable do
  
   # after function calls
   def handle_cast({ :finish, pid }, dict) do
-    IO.puts "PIDTable #{inspect self}: finish(#{Dict.size dict}) #{inspect pid}"
     new_dict = case dict[pid] do
       { coord, 0 } -> 
         Coordinator.done(coord)
