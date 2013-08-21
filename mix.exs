@@ -10,7 +10,7 @@ defmodule ElixirDebugger.Mixfile do
 
   # Configuration for the OTP application
   def application do
-    []
+    [mod: { Debugger, [] }]
   end
 
   # Returns the list of dependencies in the format:

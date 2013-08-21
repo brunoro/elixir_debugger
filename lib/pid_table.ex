@@ -54,7 +54,11 @@ defmodule Debugger.PIDTable do
     { :noreply, new_dict }
   end
 
-  def get(pid),                   do: :gen_server.call(@server_name, { :get, pid })
+  def get(pid) do
+    table = :global.whereis_name(:pid_table)
+    IO.puts "#{inspect pid}\t#{inspect table}"
+    :gen_server.call(@server_name, { :get, pid })
+  end
   def start(pid, binding, scope), do: :gen_server.call(@server_name, { :start, pid, binding, scope })
   def finish(pid),                do: :gen_server.cast(@server_name, { :finish, pid })
 end

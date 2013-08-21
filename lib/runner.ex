@@ -281,7 +281,7 @@ defmodule Debugger.Runner do
     quote do
       # TODO: are we using the proper scope?
       # put the current binding there
-      PIDTable.start_link
+      # PIDTable.start_link
 
       case PIDTable.get(self) do
         nil ->

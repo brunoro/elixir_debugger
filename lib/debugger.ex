@@ -1,6 +1,13 @@
 defmodule Debugger do
   alias Debugger.Runner
   alias Debugger.PIDTable
+  use Application.Behaviour
+
+  # See http://elixir-lang.org/docs/stable/Application.Behaviour.html
+  # for more information on OTP Applications
+  def start(_type, _args) do
+    Debugger.Supervisor.start_link
+  end
 
   defmacro defdebug(header, do: body) do
     # TODO: binding retrieved via __CALLER__ had all variables as nil
