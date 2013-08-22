@@ -138,7 +138,7 @@ defmodule Debugger.Runner do
 
   # anonymous functions
   # TODO: manage context changing 
-  def next { :fn, meta, [[do: body]] } do
+  def next({ :fn, meta, [[do: body]] }) do
     next_body = wrap_next_call(body)
     { :ok, { :fn, meta, [[do: next_body]] }}
   end
