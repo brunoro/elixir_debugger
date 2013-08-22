@@ -6,6 +6,7 @@ defmodule Debugger do
   # See http://elixir-lang.org/docs/stable/Application.Behaviour.html
   # for more information on OTP Applications
   def start(_type, _args) do
+    IO.puts "++ #{inspect self}: Debugger.start"
     Debugger.Supervisor.start_link
   end
 
@@ -20,10 +21,9 @@ defmodule Debugger do
       def unquote(header) do
         binding = unquote(vars)
         scope = :elixir_scope.to_erl_env(__ENV__)
-        PIDTable.start(self, binding, scope)
 
-        result = Runner.next(unquote(Macro.escape(body)))
-
+        coord = PIDTable.start(self, binding, scope)
+        result = Runner.next(coord, unquote(Macro.escape(body)))
         PIDTable.finish(self)
         
         case result do

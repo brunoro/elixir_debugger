@@ -13,6 +13,7 @@ defmodule Debugger.PIDTable do
   end
 
   def handle_call({ :get, pid }, _sender, dict) do
+    IO.puts ":: #{inspect self}: PIDTable.get #{inspect pid}"
     case dict[pid] do
       { coord, _count } ->
         { :reply, coord, dict }
@@ -23,6 +24,7 @@ defmodule Debugger.PIDTable do
 
   # before function calls
   def handle_call({ :start, pid, binding, scope }, _sender, dict) do
+    IO.puts ":: #{inspect self}: PIDTable.start #{inspect pid}"
     entry = case dict[pid] do
       { coord, count } ->
         # create new context

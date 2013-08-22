@@ -4,6 +4,8 @@ defmodule Debugger.Evaluator do
   # how to evaluate expressions 
   # TODO: use scope on eval?
   def eval_quoted(expr, state) do
+    #IO.puts ">> #{inspect self}: eval_quoted"
+    #IO.puts Macro.to_string expr
     try do
       { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
       new_scope = :elixir_scope.vars_from_binding(scope, binding)

@@ -3,11 +3,11 @@ defmodule Debugger.Supervisor do
   use Supervisor.Behaviour
 
   def start_link do
-    IO.puts "Debugger #{inspect self}: Supervisor.start_link"
     :supervisor.start_link(__MODULE__, [])
   end
 
   def init([]) do
+    IO.puts "__ #{inspect self}: Supervisor.init"
     children = [
       # Define workers and child supervisors to be supervised
       worker(Debugger.PIDTable, [])

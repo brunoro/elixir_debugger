@@ -7,8 +7,7 @@ defmodule Debugger.Runner do
   import Debugger.Escape
 
   # functions manipulating state coming from Coordinator
-  def change_state(fun) do
-    coord = PIDTable.get(self)
+  def change_state(coord, fun) do
     state = Coordinator.get_state(coord)
 
     case fun.(state) do
@@ -20,12 +19,11 @@ defmodule Debugger.Runner do
     end
   end
 
-  def eval_change_state(expr) do
-    change_state &Evaluator.eval_quoted(expr, &1)
+  def eval_change_state(coord, expr) do
+    change_state coord, &Evaluator.eval_quoted(expr, &1)
   end
 
-  def with_state(fun) do
-    coord = PIDTable.get(self)
+  def with_state(coord, fun) do
     state = Coordinator.get_state(coord)
 
     case fun.(state) do
@@ -38,13 +36,12 @@ defmodule Debugger.Runner do
     end
   end
 
-  def eval_with_state(expr) do
-    with_state &Evaluator.eval_quoted(expr, &1)
+  def eval_with_state(coord, expr) do
+    with_state coord, &Evaluator.eval_quoted(expr, &1)
   end
 
   # run fun on a state to be discarded
-  def do_and_discard_state(fun) do
-    coord = PIDTable.get(self)
+  def do_and_discard_state(coord, fun) do
     Coordinator.push_stack(coord)
     result = fun.()
     Coordinator.pop_stack(coord)
@@ -53,12 +50,12 @@ defmodule Debugger.Runner do
   end
 
   # expansions that lead to case-like expressions should be kept
-  defp do_or_expand(expr, fun) do 
-    expanded = with_state &Evaluator.expand(expr, &1)
+  defp do_or_expand(coord, expr, fun) do 
+    expanded = with_state coord, &Evaluator.expand(expr, &1)
 
     case expanded do
       { :case, _, _ } ->
-        next(expanded)
+        next(coord, expanded)
       _ ->
         fun.()
     end
@@ -88,8 +85,8 @@ defmodule Debugger.Runner do
 
   # maps next/1 while status returned is :ok, otherwise returns the
   # failing element of the list with its status
-  def map_next_while_ok(expr_list) do
-    v = filter_map_while expr_list, &is_status_ok?(&1), &strip_status(&1), &next(&1)
+  def map_next_while_ok(coord, expr_list) do
+    v = filter_map_while expr_list, &is_status_ok?(&1), &strip_status(&1), &next(coord, &1)
     case v do
       value_list when is_list(value_list) ->
         { :ok, value_list }
@@ -126,64 +123,64 @@ defmodule Debugger.Runner do
 
   # PID and function variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
-  def next({ var, meta, mod }) when is_atom(var) and is_atom(mod) do
+  def next(coord, { var, meta, mod }) when is_atom(var) and is_atom(mod) do
     expr = { var, meta, mod }
     case is_escaped?(atom_to_binary(var)) do
       true ->
         { :ok, expr }
       _ ->
-        eval_change_state(expr)
+        eval_change_state(coord, expr)
     end
   end
 
   # anonymous functions
   # TODO: manage context changing 
-  def next { :fn, meta, [[do: body]] } do
+  def next(coord, { :fn, meta, [[do: body]] }) do
     next_body = wrap_next_call(body)
     { :ok, { :fn, meta, [[do: next_body]] }}
   end
 
   # case
-  def next({ :case, _, [condition | [[do: clauses]]] }) do
-    { :ok, condition_value } = next(condition)
-    match_next(condition_value, clauses) # is there more than do?
+  def next(coord, { :case, _, [condition | [[do: clauses]]] }) do
+    { :ok, condition_value } = next(coord, condition)
+    match_next(coord, condition_value, clauses) # is there more than do?
   end
 
   # receive
-  def next({ :receive, _, [[do: clauses]] }) do
-    { :receive, received_value } = with_state &Evaluator.do_receive(&1)
-    match_next(received_value, clauses) 
+  def next(coord, { :receive, _, [[do: clauses]] }) do
+    { :receive, received_value } = with_state coord, &Evaluator.do_receive(&1)
+    match_next(coord, received_value, clauses) 
   end
 
   # receive-after
-  def next({ :receive, _, [[do: do_clauses, after: after_clause]] }) do
+  def next(coord, { :receive, _, [[do: do_clauses, after: after_clause]] }) do
     {:->, _, [{ [after_time], _, after_expr }]} = after_clause
 
-    case with_state &Evaluator.do_receive(&1, after_time) do
+    case with_state coord, &Evaluator.do_receive(&1, after_time) do
       { :receive, received_value } ->
-        match_next(received_value, do_clauses) 
+        match_next(coord, received_value, do_clauses) 
       { :after, _ } ->
-        next(after_expr) 
+        next(coord, after_expr) 
     end
   end
 
   # try
-  def next({ :try, _, [clauses] }) do
+  def next(coord, { :try, _, [clauses] }) do
     do_clause = clauses[:do]
 
     # variables defined on try block aren't accessible outside it
     # TODO: this is wrong, as only bindings from try aren't kept
-    do_result = do_and_discard_state fn ->
-      next(do_clause)
+    do_result = do_and_discard_state coord, fn ->
+      next(coord, do_clause)
     end
 
     case do_result do
       { :exception, kind, reason, stacktrace } ->
         exception = { :exception, kind, reason, stacktrace }
-        exception_next(exception, clauses[:rescue], clauses[:catch])
+        exception_next(coord, exception, clauses[:rescue], clauses[:catch])
       { :ok, value } ->
         if clauses[:else] do
-          match_next(value, clauses[:else])
+          match_next(coord, value, clauses[:else])
         else
           do_result
         end
@@ -191,50 +188,51 @@ defmodule Debugger.Runner do
   end
 
   # assignments
-  def next({ :=, meta, [left | [right]] }) do
-    if_status :ok, next(right), fn(right_value) ->
-      eval_change_state({ :=, meta, [left | [right_value]] })
+  def next(coord, { :=, meta, [left | [right]] }) do
+    if_status :ok, next(coord, right), fn(right_value) ->
+      eval_change_state(coord, { :=, meta, [left | [right_value]] })
     end
   end
 
   # list of expressions
-  def next({ type, meta, expr_list }) when is_list(expr_list) do
+  def next(coord, { type, meta, expr_list }) when is_list(expr_list) do
     expr = { type, meta, expr_list }
 
-    do_or_expand expr, fn ->
-      if_status :ok, map_next_while_ok(expr_list), fn(value_list) ->
-        eval_change_state({ type, meta, value_list })
+    do_or_expand coord, expr, fn ->
+      if_status :ok, map_next_while_ok(coord, expr_list), fn(value_list) ->
+        eval_change_state(coord, { type, meta, value_list })
       end
     end
   end
 
   # other expressions are evaluated directly
-  def next({ left, meta, right }) do
+  def next(coord, { left, meta, right }) do
     expr = { left , meta, right }
-    do_or_expand expr, fn ->
-      eval_change_state(expr)
+    do_or_expand coord, expr, fn ->
+      eval_change_state(coord, expr)
     end
   end
 
   # lists aren't escaped like tuples
-  def next(expr_list) when is_list(expr_list) do
-    map_next_while_ok expr_list
+  def next(coord, expr_list) when is_list(expr_list) do
+    map_next_while_ok coord, expr_list
   end
 
   # ignore everything else (atoms, binaries, numbers, unescaped tuples, etc.)
-  def next(other), do: { :ok, other }
+  def next(_coord, other), do: { :ok, other }
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found
-  def match_next(value, clauses) do
-    matching_clause = change_state fn(state) ->
+  def match_next(coord, value, clauses) do
+    IO.puts ">> #{inspect self}: match_next #{inspect value}"
+    matching_clause = change_state coord, fn(state) ->
       Evaluator.find_match_clause(value, clauses, state)
     end
     
     if_status :ok, matching_clause, fn({ _, _, right }) ->
-      result = next(right)
+      result = next(coord, right)
 
-      change_state fn(state) ->
+      change_state coord, fn(state) ->
         Evaluator.initialize_clause_vars(clauses, state)
       end
 
@@ -242,7 +240,7 @@ defmodule Debugger.Runner do
     end
   end
 
-  def exception_next(exception, rescue_block, catch_block) do
+  def exception_next(coord, exception, rescue_block, catch_block) do
     { :exception, kind, reason, stacktrace } = exception
     esc_stacktrace = Macro.escape stacktrace
     esc_reason = Macro.escape reason
@@ -259,8 +257,8 @@ defmodule Debugger.Runner do
     try_expr = { :try, [context: Debugger.Evaluator, import: Kernel], [clauses] }
 
     if try_expr do
-      do_and_discard_state fn ->
-        with_state fn(state) ->
+      do_and_discard_state coord, fn ->
+        with_state coord, fn(state) ->
           Evaluator.eval_quoted(try_expr, state)
         end
       end
@@ -294,7 +292,7 @@ defmodule Debugger.Runner do
       end
       
       PIDTable.start(self, binding, scope)
-      return = Runner.next(unquote(esc_expr))
+      return = Runner.next(coord, unquote(esc_expr))
       PIDTable.finish(self)
 
       if Runner.is_status_ok? return do

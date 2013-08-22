@@ -10,6 +10,7 @@ defmodule Debugger.Coordinator do
 
   # gen_server methods
   def init(state) do
+    IO.puts ".. #{inspect self}: Coordinator.init"
     scope = :elixir_scope.vars_from_binding(state.scope, state.binding)
     { :ok, state.scope(scope) }
   end
