@@ -57,4 +57,5 @@ defmodule Debugger.PIDTable do
   def get(pid),                   do: :gen_server.call(@server_name, { :get, pid })
   def start(pid, binding, scope), do: :gen_server.call(@server_name, { :start, pid, binding, scope })
   def finish(pid),                do: :gen_server.cast(@server_name, { :finish, pid })
+
 end

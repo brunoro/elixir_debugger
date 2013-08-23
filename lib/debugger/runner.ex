@@ -3,6 +3,7 @@ defmodule Debugger.Runner do
   alias Debugger.Evaluator
   alias Debugger.PIDTable
   alias Debugger.Runner
+  alias Debugger.CLI
   
   import Debugger.Escape
 
@@ -21,7 +22,12 @@ defmodule Debugger.Runner do
   end
 
   def eval_change_state(expr) do
-    change_state &Evaluator.escape_and_eval(expr, &1)
+    # TODO: refactor this out of here
+    CLI.next(self, expr)
+    receive do
+      :go ->
+        change_state &Evaluator.escape_and_eval(expr, &1)
+    end
   end
 
   def with_state(fun) do

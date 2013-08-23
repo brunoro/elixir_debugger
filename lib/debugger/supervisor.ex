@@ -9,7 +9,8 @@ defmodule Debugger.Supervisor do
   def init([]) do
     children = [
       # Define workers and child supervisors to be supervised
-      worker(Debugger.PIDTable, [])
+      worker(Debugger.PIDTable, []),
+      worker(Debugger.CLI, [])
     ]
 
     # See http://elixir-lang.org/docs/stable/Supervisor.Behaviour.html
