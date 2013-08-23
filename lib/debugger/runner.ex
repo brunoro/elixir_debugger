@@ -126,8 +126,9 @@ defmodule Debugger.Runner do
 
   # PID and function variables sholdn't be next'd
   # TODO: functions with one argument would fall here too
-  def next({ var, meta, mod }) when is_atom(var) and is_atom(mod) do
+  def next({ var, meta, mod }) when is_atom(var) do
     expr = { var, meta, mod }
+
     case is_escaped?(atom_to_binary(var)) do
       true ->
         { :ok, expr }
@@ -220,8 +221,16 @@ defmodule Debugger.Runner do
   def next(expr_list) when is_list(expr_list) do
     map_next_while_ok expr_list
   end
+  
+  # other tuples?
+  def next(expr_tuple) when is_tuple(expr_tuple) do
+    expr_list = tuple_to_list(expr_tuple)
+    # TODO: also check for exceptions here
+    { status, result } = map_next_while_ok expr_list
+    { status, list_to_tuple(result) }
+  end
 
-  # ignore everything else (atoms, binaries, numbers, unescaped tuples, etc.)
+  # ignore everything else (atoms, binaries, numbers, etc.)
   def next(other), do: { :ok, other }
 
   # pattern matching operator should evaluate clauses until
