@@ -21,7 +21,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_change_state(expr) do
-    change_state &Evaluator.eval_quoted(expr, &1)
+    change_state &Evaluator.eval_and_escape(expr, &1)
   end
 
   def with_state(fun) do
@@ -39,7 +39,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_with_state(expr) do
-    with_state &Evaluator.eval_quoted(expr, &1)
+    with_state &Evaluator.eval_and_escape(expr, &1)
   end
 
   # run fun on a state to be discarded
@@ -270,7 +270,7 @@ defmodule Debugger.Runner do
     if try_expr do
       do_and_discard_state fn ->
         with_state fn(state) ->
-          Evaluator.eval_quoted(try_expr, state)
+          Evaluator.eval_and_escape(try_expr, state)
         end
       end
     else

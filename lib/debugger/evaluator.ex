@@ -8,10 +8,7 @@ defmodule Debugger.Evaluator do
       { value, binding, scope } = :elixir.eval_quoted([expr], state.binding)
       new_scope = :elixir_scope.vars_from_binding(scope, binding)
 
-      # escape values
-      { clean_value, new_state } = 
-        escape_and_bind(value, state.binding(binding).scope(new_scope))
-      { :ok, clean_value, new_state }
+      { :ok, value, state.binding(binding).scope(new_scope) }
     catch
       kind, reason -> 
         { :exception, kind, reason, :erlang.get_stacktrace }
@@ -42,6 +39,16 @@ defmodule Debugger.Evaluator do
   end
   def escape_and_bind(value, state), do: { value, state }
 
+  def eval_and_escape(expr, state) do
+    case eval_quoted(expr, state) do
+      { :ok, value, new_state } ->
+        { esc_value, esc_state } = escape_and_bind(value, new_state)
+        { :ok, esc_value, esc_state }
+      other ->
+        other
+    end
+  end
+
   # interface functions
   def expand(expr, state) do
     { _, meta, _ } = expr
@@ -56,7 +63,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { :ok, { status, value }, new_state } = eval_quoted(receive_code, state)
+    { :ok, { status, value }, new_state } = eval_and_escape(receive_code, state)
     { status, value, new_state }
   end
   def do_receive(state, after_time) do
@@ -68,7 +75,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { :ok, { status, value }, new_state } = eval_quoted(receive_code, state)
+    { :ok, { status, value }, new_state } = eval_and_escape(receive_code, state)
     { status, value, new_state }
   end
 
@@ -82,7 +89,7 @@ defmodule Debugger.Evaluator do
       end
     end
 
-    eval_quoted(match_clause_case, state)
+    eval_and_escape(match_clause_case, state)
   end
 
   def initialize_clause_vars({ :->, _meta, clauses }, state) do
@@ -95,7 +102,7 @@ defmodule Debugger.Evaluator do
       end
     end
 
-    eval_quoted(match_clause_case, state)
+    eval_and_escape(match_clause_case, state)
   end
 
   def escape_clauses({ :->, meta, clauses }) do
