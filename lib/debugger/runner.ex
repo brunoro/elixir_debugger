@@ -21,7 +21,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_change_state(expr) do
-    change_state &Evaluator.eval_and_escape(expr, &1)
+    change_state &Evaluator.escape_and_eval(expr, &1)
   end
 
   def with_state(fun) do
@@ -39,7 +39,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_with_state(expr) do
-    with_state &Evaluator.eval_and_escape(expr, &1)
+    with_state &Evaluator.escape_and_eval(expr, &1)
   end
 
   # run fun on a state to be discarded
@@ -54,12 +54,12 @@ defmodule Debugger.Runner do
 
   # expansions that lead to case-like expressions should be kept
   defp do_or_expand(expr, fun) do 
-    expanded = with_state &Evaluator.expand(expr, &1)
+    { :ok, expanded } = with_state &Evaluator.expand(expr, &1)
 
     case expanded do
       { :case, _, _ } ->
         next(expanded)
-      _ ->
+      result ->
         fun.()
     end
   end
@@ -124,19 +124,6 @@ defmodule Debugger.Runner do
   # keeps the current scope and binding
   # returns { :ok, value } or { :exception, kind, reason, stacktrace }
 
-  # PID and function variables sholdn't be next'd
-  # TODO: functions with one argument would fall here too
-  def next({ var, meta, mod }) when is_atom(var) do
-    expr = { var, meta, mod }
-
-    case is_escaped?(atom_to_binary(var)) do
-      true ->
-        { :ok, expr }
-      _ ->
-        eval_change_state(expr)
-    end
-  end
-
   # anonymous functions
   # TODO: manage context changing 
   def next({ :fn, meta, [[do: body]] }) do
@@ -173,10 +160,7 @@ defmodule Debugger.Runner do
     do_clause = clauses[:do]
 
     # variables defined on try block aren't accessible outside it
-    # TODO: this is wrong, as only bindings from try aren't kept
-    do_result = do_and_discard_state fn ->
-      next(do_clause)
-    end
+    do_result = next(do_clause)
 
     case do_result do
       { :exception, kind, reason, stacktrace } ->
@@ -270,7 +254,7 @@ defmodule Debugger.Runner do
     if try_expr do
       do_and_discard_state fn ->
         with_state fn(state) ->
-          Evaluator.eval_and_escape(try_expr, state)
+          Evaluator.escape_and_eval(try_expr, state)
         end
       end
     else

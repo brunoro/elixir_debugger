@@ -39,14 +39,9 @@ defmodule Debugger.Evaluator do
   end
   def escape_and_bind(value, state), do: { value, state }
 
-  def eval_and_escape(expr, state) do
-    case eval_quoted(expr, state) do
-      { :ok, value, new_state } ->
-        { esc_value, esc_state } = escape_and_bind(value, new_state)
-        { :ok, esc_value, esc_state }
-      other ->
-        other
-    end
+  def escape_and_eval(expr, state) do
+    { esc_value, esc_state } = escape_and_bind(expr, state)
+    eval_quoted(esc_value, esc_state)
   end
 
   # interface functions
@@ -63,7 +58,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { :ok, { status, value }, new_state } = eval_and_escape(receive_code, state)
+    { :ok, { status, value }, new_state } = escape_and_eval(receive_code, state)
     { status, value, new_state }
   end
   def do_receive(state, after_time) do
@@ -75,7 +70,7 @@ defmodule Debugger.Evaluator do
       end
     end
     
-    { :ok, { status, value }, new_state } = eval_and_escape(receive_code, state)
+    { :ok, { status, value }, new_state } = escape_and_eval(receive_code, state)
     { status, value, new_state }
   end
 
@@ -89,7 +84,7 @@ defmodule Debugger.Evaluator do
       end
     end
 
-    eval_and_escape(match_clause_case, state)
+    escape_and_eval(match_clause_case, state)
   end
 
   def initialize_clause_vars({ :->, _meta, clauses }, state) do
@@ -102,7 +97,7 @@ defmodule Debugger.Evaluator do
       end
     end
 
-    eval_and_escape(match_clause_case, state)
+    escape_and_eval(match_clause_case, state)
   end
 
   def escape_clauses({ :->, meta, clauses }) do

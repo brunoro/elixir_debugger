@@ -10,7 +10,6 @@ defmodule StringTest do
 
   test "string interpolation" do 
     { pid, bin } = interpolate_pid
-    #IO.inspect { pid, bin } 
     assert inspect(pid) == bin
   end
 end
