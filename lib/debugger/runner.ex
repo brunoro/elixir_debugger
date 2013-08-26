@@ -22,12 +22,7 @@ defmodule Debugger.Runner do
   end
 
   def eval_change_state(expr) do
-    # TODO: refactor this out of here
-    CLI.next(self, expr)
-    receive do
-      :go ->
-        change_state &Evaluator.escape_and_eval(expr, &1)
-    end
+    change_state &Evaluator.escape_and_eval(expr, &1)
   end
 
   def with_state(fun) do
@@ -64,7 +59,7 @@ defmodule Debugger.Runner do
 
     case expanded do
       { :case, _, _ } ->
-        next(expanded)
+        do_next(expanded)
       result ->
         fun.()
     end
@@ -120,7 +115,6 @@ defmodule Debugger.Runner do
   def is_status_ok?({ status, _, _ }), do: status == :ok
   def is_status_ok?({ status, _, _, _ }), do: status == :ok
 
-
   # removes status from a Runner return value
   def strip_status({ _, a }), do: a
   def strip_status({ _, a, b }), do: { a, b }
@@ -129,28 +123,34 @@ defmodule Debugger.Runner do
   # makes nested next calls until leafs are reached.
   # keeps the current scope and binding
   # returns { :ok, value } or { :exception, kind, reason, stacktrace }
+  def next(expr) do
+    CLI.next(self, expr)
+    receive do
+      :go -> do_next(expr)
+    end
+  end
 
   # anonymous functions
   # TODO: manage context changing 
-  def next({ :fn, meta, [[do: body]] }) do
+  def do_next({ :fn, meta, [[do: body]] }) do
     next_body = wrap_next_call(body)
     { :ok, { :fn, meta, [[do: next_body]] }}
   end
 
   # case
-  def next({ :case, _, [condition | [[do: clauses]]] }) do
+  def do_next({ :case, _, [condition | [[do: clauses]]] }) do
     { :ok, condition_value } = next(condition)
     match_next(condition_value, clauses) # is there more than do?
   end
 
   # receive
-  def next({ :receive, _, [[do: clauses]] }) do
+  def do_next({ :receive, _, [[do: clauses]] }) do
     { :receive, received_value } = with_state &Evaluator.do_receive(&1)
     match_next(received_value, clauses) 
   end
 
   # receive-after
-  def next({ :receive, _, [[do: do_clauses, after: after_clause]] }) do
+  def do_next({ :receive, _, [[do: do_clauses, after: after_clause]] }) do
     {:->, _, [{ [after_time], _, after_expr }]} = after_clause
 
     case with_state &Evaluator.do_receive(&1, after_time) do
@@ -162,7 +162,7 @@ defmodule Debugger.Runner do
   end
 
   # try
-  def next({ :try, _, [clauses] }) do
+  def do_next({ :try, _, [clauses] }) do
     do_clause = clauses[:do]
 
     # variables defined on try block aren't accessible outside it
@@ -182,14 +182,14 @@ defmodule Debugger.Runner do
   end
 
   # assignments
-  def next({ :=, meta, [left | [right]] }) do
+  def do_next({ :=, meta, [left | [right]] }) do
     if_status :ok, next(right), fn(right_value) ->
       eval_change_state({ :=, meta, [left | [right_value]] })
     end
   end
 
   # list of expressions
-  def next({ type, meta, expr_list }) when is_list(expr_list) do
+  def do_next({ type, meta, expr_list }) when is_list(expr_list) do
     expr = { type, meta, expr_list }
 
     do_or_expand expr, fn ->
@@ -200,7 +200,7 @@ defmodule Debugger.Runner do
   end
 
   # other expressions are evaluated directly
-  def next({ left, meta, right }) do
+  def do_next({ left, meta, right }) do
     expr = { left , meta, right }
     do_or_expand expr, fn ->
       eval_change_state(expr)
@@ -208,12 +208,12 @@ defmodule Debugger.Runner do
   end
 
   # lists aren't escaped like tuples
-  def next(expr_list) when is_list(expr_list) do
+  def do_next(expr_list) when is_list(expr_list) do
     map_next_while_ok expr_list
   end
   
   # other tuples?
-  def next(expr_tuple) when is_tuple(expr_tuple) do
+  def do_next(expr_tuple) when is_tuple(expr_tuple) do
     expr_list = tuple_to_list(expr_tuple)
     # TODO: also check for exceptions here
     { status, result } = map_next_while_ok expr_list
@@ -221,7 +221,7 @@ defmodule Debugger.Runner do
   end
 
   # ignore everything else (atoms, binaries, numbers, etc.)
-  def next(other), do: { :ok, other }
+  def do_next(other), do: { :ok, other }
 
   # pattern matching operator should evaluate clauses until
   # the first clause matching the condition is found

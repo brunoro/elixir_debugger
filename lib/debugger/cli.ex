@@ -12,7 +12,7 @@ defmodule Debugger.CLI do
   end
 
   def handle_cast({ :next, pid, expr }, state) do
-    IO.puts "#{inspect pid}:\n#{Macro.to_string expr}"
+    IO.puts "#{inspect pid}:\n#{Macro.to_string expr}\n"
     read_command(pid)
 
     { :noreply, state }
@@ -23,6 +23,10 @@ defmodule Debugger.CLI do
   end
 
   def read_command(pid) do
+    step(pid)
+  end
+
+  def _read_command(pid) do
     case prompt(pid) do
       "step" ->
         step(pid)
