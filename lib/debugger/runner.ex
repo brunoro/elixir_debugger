@@ -1,22 +1,22 @@
 defmodule Debugger.Runner do
-  alias Debugger.Coordinator
+  alias Debugger.StateServer
   alias Debugger.Evaluator
   alias Debugger.PIDTable
   alias Debugger.Runner
-  alias Debugger.CLI
+  alias Debugger.Controller
   
   import Debugger.Escape
 
-  # functions manipulating state coming from Coordinator
+  # functions manipulating state coming from StateServer
   def change_state(fun) do
-    coord = PIDTable.get(self)
-    state = Coordinator.get_state(coord)
+    state_server = PIDTable.get(self)
+    state = StateServer.get(state_server)
 
     case fun.(state) do
       { :exception, kind, reason, stacktrace } ->
         { :exception, kind, reason, stacktrace }
       { status, result, new_state } ->
-        Coordinator.put_state(coord, new_state)
+        StateServer.put(state_server, new_state)
         { status, result }
     end
   end
@@ -26,8 +26,8 @@ defmodule Debugger.Runner do
   end
 
   def with_state(fun) do
-    coord = PIDTable.get(self)
-    state = Coordinator.get_state(coord)
+    state_server = PIDTable.get(self)
+    state = StateServer.get(state_server)
 
     case fun.(state) do
       { :exception, kind, reason, stacktrace } ->
@@ -45,10 +45,10 @@ defmodule Debugger.Runner do
 
   # run fun on a state to be discarded
   def do_and_discard_state(fun) do
-    coord = PIDTable.get(self)
-    Coordinator.push_stack(coord)
+    state_server = PIDTable.get(self)
+    StateServer.push_stack(state_server)
     result = fun.()
-    Coordinator.pop_stack(coord)
+    StateServer.pop_stack(state_server)
 
     result
   end
@@ -124,7 +124,7 @@ defmodule Debugger.Runner do
   # keeps the current scope and binding
   # returns { :ok, value } or { :exception, kind, reason, stacktrace }
   def next(expr) do
-    CLI.next(self, expr)
+    Controller.next(self, expr)
     receive do
       :go -> do_next(expr)
     end
@@ -280,14 +280,13 @@ defmodule Debugger.Runner do
     quote do
       # TODO: are we using the proper scope?
       # put the current binding there
-      # PIDTable.start_link
 
       case PIDTable.get(self) do
         nil ->
           binding = Kernel.binding
           scope = :elixir_scope.to_erl_env(__ENV__)
-        coord ->
-          state = Coordinator.get_state(coord)
+        state_server ->
+          state = StateServer.get(state_server)
           binding = Keyword.merge(state.binding, Kernel.binding)
           scope = :elixir_scope.vars_from_binding(state.scope, binding)
       end

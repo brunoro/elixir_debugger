@@ -1,4 +1,4 @@
-defmodule Debugger.Coordinator do
+defmodule Debugger.StateServer do
   use GenServer.Behaviour
 
   defrecord State, [binding: nil, scope: nil, stack: []]
@@ -15,7 +15,7 @@ defmodule Debugger.Coordinator do
   end
     
   ## handle_call
-  def handle_call(:get_state, _from, state) do
+  def handle_call(:get, _from, state) do
     { :reply, state, state }
   end
 
@@ -37,14 +37,14 @@ defmodule Debugger.Coordinator do
     { :noreply, state.stack([{ state.binding, state.scope } | state.stack]) }
   end
 
-  def handle_cast({ :put_state, new_state }, _state) do
+  def handle_cast({ :put, new_state }, _state) do
     { :noreply, new_state }
   end
 
   # client functions
   def done(pid),             do: :gen_server.cast(pid, :done)
-  def get_state(pid),        do: :gen_server.call(pid, :get_state)
-  def put_state(pid, state), do: :gen_server.cast(pid, { :put_state, state })
+  def get(pid),              do: :gen_server.call(pid, :get)
+  def put(pid, state),       do: :gen_server.cast(pid, { :put, state })
 
   def pop_stack(pid),        do: :gen_server.cast(pid, :pop_stack)
   def push_stack(pid),       do: :gen_server.cast(pid, :push_stack)

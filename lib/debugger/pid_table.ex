@@ -1,6 +1,6 @@
 defmodule Debugger.PIDTable do
   use GenServer.Behaviour
-  alias Debugger.Coordinator
+  alias Debugger.StateServer
 
   @server_name { :global, :pid_table }
 
@@ -14,8 +14,8 @@ defmodule Debugger.PIDTable do
 
   def handle_call({ :get, pid }, _sender, dict) do
     case dict[pid] do
-      { coord, _count } ->
-        { :reply, coord, dict }
+      { state_server, _count } ->
+        { :reply, state_server, dict }
       nil ->
         { :reply, nil, dict }
     end
@@ -24,31 +24,31 @@ defmodule Debugger.PIDTable do
   # before function calls
   def handle_call({ :start, pid, binding, scope }, _sender, dict) do
     entry = case dict[pid] do
-      { coord, count } ->
+      { state_server, count } ->
         # create new context
-        Coordinator.push_stack(coord)
-        state = Coordinator.get_state(coord)
-        Coordinator.put_state(coord, state.binding(binding).scope(scope))
+        StateServer.push_stack(state_server)
+        state = StateServer.get(state_server)
+        StateServer.put(state_server, state.binding(binding).scope(scope))
 
-        { coord, count + 1 }
+        { state_server, count + 1 }
       nil ->
-        { :ok, coord } = Coordinator.start_link(binding, scope)
-        { coord, 0 }
+        { :ok, state_server } = StateServer.start_link(binding, scope)
+        { state_server, 0 }
     end
 
-    { :reply, coord, Dict.put(dict, pid, entry) }
+    { :reply, state_server, Dict.put(dict, pid, entry) }
   end
  
   # after function calls
   def handle_cast({ :finish, pid }, dict) do
     new_dict = case dict[pid] do
-      { coord, 0 } -> 
-        Coordinator.done(coord)
+      { state_server, 0 } -> 
+        StateServer.done(state_server)
         Dict.delete(dict, pid)
-      { coord, count } ->
+      { state_server, count } ->
         # exit context
-        Coordinator.pop_stack(coord)
-        Dict.put(dict, pid, { coord, count - 1 })
+        StateServer.pop_stack(state_server)
+        Dict.put(dict, pid, { state_server, count - 1 })
     end
 
     { :noreply, new_dict }

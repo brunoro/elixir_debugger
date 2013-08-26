@@ -1,7 +1,7 @@
-defmodule Debugger.CLI do
+defmodule Debugger.Controller do
   use GenServer.Behaviour
 
-  @server_name { :global, :cli }
+  @server_name { :global, :controller }
 
   def start_link do
     :gen_server.start_link(@server_name, __MODULE__, [], [])
