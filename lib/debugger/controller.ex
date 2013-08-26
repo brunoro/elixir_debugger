@@ -8,34 +8,21 @@ defmodule Debugger.Controller do
   end
 
   def init do
-    { :ok, nil }
+    { :ok, HashDict.new }
   end
 
-  def handle_cast({ :next, pid, expr }, state) do
-    IO.puts "#{inspect pid}:\n#{Macro.to_string expr}\n"
-    read_command(pid)
-
-    { :noreply, state }
+  # The Controller keeps track of the expressions processes are
+  # currently running, being notified through next.
+  def handle_cast({ :next, pid, expr }, expr_table) do
+    { :noreply, Dict.put(expr_table, pid, expr) }
+  end
+  
+  def handle_call(:list, _sender, expr_table) do
+    { :reply, expr_table, expr_table }
   end
 
-  def prompt(pid) do
-    IO.gets("debugger(#{inspect pid}) ") |> String.strip
-  end
-
-  def read_command(pid) do
-    step(pid)
-  end
-
-  def _read_command(pid) do
-    case prompt(pid) do
-      "step" ->
-        step(pid)
-      other ->
-        read_command(pid)
-    end
-  end
-
+  def list,            do: :gen_server.call(@server_name, :list)
+  def step(pid),       do: pid <- :go
   def next(pid, expr), do: :gen_server.cast(@server_name, { :next, pid, expr })
-  def step(pid), do: pid <- :go
 
 end
