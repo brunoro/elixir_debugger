@@ -11,7 +11,7 @@ defmodule Debugger.Escape do
   # #PID<0.49.0> -> :__PID_0_49_0__
   def escape(pid) when is_pid(pid) do
     esc_pid = pid |> pid_to_list 
-                  |> to_binary 
+                  |> to_string 
                   |> String.replace("<", "")
                   |> String.replace(">", "")
                   |> String.replace(".", "_") 
@@ -22,7 +22,7 @@ defmodule Debugger.Escape do
   # :"-expr/5-fun-2-" -> "__FUN_expr_5_fun_2__"
   def escape(fun) when is_function(fun) do
     fun_info = :erlang.fun_info(fun)
-    fun_name = fun_info[:name] |> to_binary
+    fun_name = fun_info[:name] |> to_string
                                |> String.strip("-")
                                |> String.replace("-", "_")
                                |> String.replace("/", "_")
