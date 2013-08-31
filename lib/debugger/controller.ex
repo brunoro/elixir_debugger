@@ -35,7 +35,8 @@ defmodule Debugger.Controller do
     :loop
   end
   def command(["step", index], controller_state) do
-    case Enum.at(controller_state, String.to_integer index) do
+    { int_index, _ } = String.to_integer(index)
+    case Enum.fetch(controller_state, int_index) do
       { :ok, { pid, _ }} -> 
         Runner.continue(pid)
       :error ->
@@ -49,12 +50,13 @@ defmodule Debugger.Controller do
   end
 
   def read_input do
-    IO.gets("debugger> ") |> String.strip |> String.split
+    IO.gets("debugger> ") 
+    |> String.strip 
+    |> String.split(%r/\s/, trim: true)
   end
 
   def next_io_loop(pid, controller_state) do
-    cmd_return = read_input |> command(controller_state)
-    case cmd_return do
+    case command(read_input, controller_state) do
       :loop ->
         next_io_loop(pid, controller_state)
       :exit ->
