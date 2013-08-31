@@ -119,6 +119,8 @@ defmodule Debugger.Runner do
   def strip_status({ _, a }), do: a
   def strip_status({ _, a, b }), do: { a, b }
 
+  def continue(runner_pid), do: runner_pid <- :continue
+
   ## next/1
   # makes nested next calls until leafs are reached.
   # keeps the current scope and binding
@@ -126,7 +128,7 @@ defmodule Debugger.Runner do
   def next(expr) do
     Controller.next(self, expr)
     receive do
-      :go -> do_next(expr)
+      :continue -> do_next(expr)
     end
   end
 
