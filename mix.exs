@@ -1,5 +1,6 @@
 defmodule ElixirDebugger.Mixfile do
   use Mix.Project
+  use Application.Behaviour
 
   def project do
     [ app: :elixir_debugger,
